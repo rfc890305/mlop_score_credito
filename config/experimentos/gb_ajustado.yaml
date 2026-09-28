@@ -1,0 +1,60 @@
+# =============================================================================
+# EXPERIMENTO: gradient boosting com mais árvores/folhas (herda o resto de config.yaml)
+# Uso: python src/treinamento.py --config config/experimentos/gb_ajustado.yaml
+# Todos os scripts (treino, inferência e API) leem este arquivo.
+# Caminhos relativos são resolvidos a partir da raiz do repositório.
+# =============================================================================
+
+projeto:
+  nome: quantumfinance-credit-score
+  descricao: "Score de crédito simplificado para clientes de empresas parceiras"
+
+dados:
+  treino: data/raw/train.csv
+  teste: data/raw/test.csv          # dados sem rótulo, usados na inferência em lote
+  predicoes: data/predictions
+  coluna_alvo: Credit_Score
+  coluna_mes: Month
+  # Requisito de negócio: treinar com as transações MAIS RECENTES dos clientes.
+  # Usamos apenas os últimos N meses do histórico disponível.
+  janela_meses_recentes: 4          # maio, junho, julho e agosto
+  # Dentro da janela, o último mês é separado como validação temporal (out-of-time)
+  meses_validacao: 1
+
+mlflow:
+  tracking_uri: sqlite:///mlflow.db  # backend de metadados (runs, params, métricas, registry)
+  artifact_root: ./mlartifacts       # onde ficam os artefatos (modelo, gráficos, relatórios)
+  experimento: credit-score-parceiros
+  nome_modelo_registrado: quantumfinance-credit-score
+  alias_producao: champion           # alias que representa o modelo em PRODUÇÃO
+  alias_candidato: challenger        # alias do último candidato avaliado
+
+treino:
+  semente: 42
+  # Modelos candidatos. Cada um vira um run filho no MLflow.
+  candidatos:
+    regressao_logistica:
+      C: 1.0
+      max_iter: 1000
+    arvore_decisao:
+      max_depth: 8
+      min_samples_leaf: 50
+    gradient_boosting:
+      max_iter: 800
+      learning_rate: 0.05
+      max_depth: 12
+      max_leaf_nodes: 127
+      l2_regularization: 1.0
+
+promocao:
+  # Critérios para o candidato virar o novo modelo em produção
+  metrica_principal: f1_macro         # métrica de decisão (classes desbalanceadas)
+  limiar_minimo: 0.60                 # piso absoluto de qualidade
+  ganho_minimo: 0.005                 # deve superar o modelo em produção por pelo menos isso
+  recall_minimo_poor: 0.60            # proteção de risco: detectar bem clientes "Poor"
+
+api:
+  titulo: "QuantumFinance - API de Score de Crédito"
+  versao: "1.0.0"
+  limite_requisicoes: "30/minute"     # throttling por chave de API
+  limite_lote: 100                    # máximo de clientes por chamada em lote

@@ -1,0 +1,95 @@
+# CI/CD: testes em todo push e PR; em push na main, build da imagem, publicação
+# no Artifact Registry, deploy no Cloud Run e criação automática da tag de versão.
+#
+# Configuração (Settings > Secrets and variables > Actions > Variables):
+#   GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT
+# Nenhuma chave de conta de serviço é usada: a autenticação é por Workload Identity Federation.
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  VERSAO_BASE: "1.0"
+  REPOSITORIO_AR: credit-score        # repositório do Artifact Registry
+  SERVICO: api-score-credito          # nome do serviço no Cloud Run
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Treinar e promover (gera o champion usado pelos testes)
+        run: python src/treinamento.py
+        env:
+          MLFLOW_DISABLE_AGENT_HINT: "1"
+      - name: Testes automatizados
+        run: python -m pytest -q tests
+      - name: Guardar evidências do treino
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-${{ github.run_number }}
+          path: |
+            mlflow.db
+            mlartifacts/
+          retention-days: 30
+
+  deploy:
+    needs: testes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # criar a tag de versão
+      id-token: write     # Workload Identity Federation
+    env:
+      VERSAO: v1.0.${{ github.run_number }}
+      IMAGEM: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/credit-score/api-score-credito
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build e push da imagem (treina o modelo dentro do build)
+        run: |
+          gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+          docker build -f deploy/gcp/Dockerfile \
+            -t "$IMAGEM:$VERSAO" -t "$IMAGEM:${{ github.sha }}" .
+          docker push --all-tags "$IMAGEM"
+
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICO }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ env.IMAGEM }}:${{ env.VERSAO }}
+          # a autenticação é feita pela própria API (X-API-Key); o Cloud Run fica público
+          flags: >-
+            --allow-unauthenticated
+            --memory=1Gi
+            --max-instances=3
+            --set-secrets=QF_API_KEYS=qf-api-keys:latest,QF_ADMIN_KEYS=qf-admin-keys:latest
+
+      - name: Smoke test
+        run: |
+          curl -fsS "${{ steps.deploy.outputs.url }}/health" | tee health.json
+          grep -q '"modelo_carregado":true' health.json
+
+      - name: Criar tag de versão
+        run: |
+          git tag "$VERSAO" -m "Deploy $VERSAO no Cloud Run (${{ github.sha }})"
+          git push origin "$VERSAO"

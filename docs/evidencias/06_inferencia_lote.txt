@@ -1,0 +1,6 @@
+$ python src/inferencia.py
+[modelo] models:/quantumfinance-credit-score@champion -> versão 4 (gradient_boosting), run 24a3376692c84f48b4982ddba2355da6
+[dados] 50000 linhas lidas de /home/claude/qf/data/raw/test.csv
+[saída] 50000 predições gravadas em /home/claude/qf/data/predictions/predicoes_v4_20260928_220844.csv
+[distribuição] {'Standard': 21533, 'Poor': 15709, 'Good': 12758}
+(código de saída: 0)

@@ -1,0 +1,130 @@
+
+=== 1. Health check (sem autenticação)
+$ curl http://localhost:8000/health
+{
+    "status": "ok",
+    "modelo_carregado": true,
+    "versao_modelo": "4"
+}
+
+=== 2. Score de um cliente (200)
+$ curl -X POST http://localhost:8000/v1/score -H 'X-API-Key: ***' -H 'Content-Type: application/json' -d '<cliente>'
+HTTP/1.1 200 OK
+x-ratelimit-limit: 30
+x-ratelimit-remaining: 29
+x-ratelimit-reset: 1790633463.111357
+x-request-id: ccd23cfa-9461-4d6f-9548-dd75f5504ba9
+{
+    "cliente_id": "CUS_0xd40",
+    "score": "Good",
+    "probabilidades": {
+        "Good": 0.9323,
+        "Poor": 0.017,
+        "Standard": 0.0507
+    },
+    "id_requisicao": "ccd23cfa-9461-4d6f-9548-dd75f5504ba9",
+    "modelo": {
+        "nome": "quantumfinance-credit-score",
+        "versao": "4",
+        "alias": "champion",
+        "algoritmo": "gradient_boosting",
+        "run_id": "24a3376692c84f48b4982ddba2355da6",
+        "carregado_em": "2026-09-28T22:10:01+00:00"
+    },
+    "data_processamento": "2026-09-28T22:10:02+00:00"
+}
+
+=== 3. Score em lote (200)
+$ curl -X POST http://localhost:8000/v1/score/lote -H 'X-API-Key: ***' -d '{"clientes": [<cliente1>, <cliente2>]}'
+{
+    "id_requisicao": "6ff80706-8403-4c50-9ae8-a43af7d780aa",
+    "total": 2,
+    "resultados": [
+        {
+            "cliente_id": "CUS_0xd40",
+            "score": "Good",
+            "probabilidades": {
+                "Good": 0.9323,
+                "Poor": 0.017,
+                "Standard": 0.0507
+            }
+        },
+        {
+            "cliente_id": "CUS_0x21b1",
+            "score": "Poor",
+            "probabilidades": {
+                "Good": 0.0034,
+                "Poor": 0.5779,
+                "Standard": 0.4186
+            }
+        }
+    ],
+    "modelo": {
+        "nome": "quantumfinance-credit-score",
+        "versao": "4",
+        "alias": "champion",
+        "algoritmo": "gradient_boosting",
+        "run_id": "24a3376692c84f48b4982ddba2355da6",
+        "carregado_em": "2026-09-28T22:10:01+00:00"
+    },
+    "data_processamento": "2026-09-28T22:10:02+00:00"
+}
+
+=== 4. Versão do modelo em produção (200)
+$ curl http://localhost:8000/v1/modelo -H 'X-API-Key: ***'
+{
+    "nome": "quantumfinance-credit-score",
+    "versao": "4",
+    "alias": "champion",
+    "algoritmo": "gradient_boosting",
+    "run_id": "24a3376692c84f48b4982ddba2355da6",
+    "carregado_em": "2026-09-28T22:10:01+00:00"
+}
+
+=== 5. Sem chave (401)
+$ curl -X POST http://localhost:8000/v1/score -d '<cliente>'
+{"erro":{"codigo":"chave_ausente","mensagem":"Header X-API-Key não informado.","detalhes":null},"id_requisicao":"618a58cf-0375-4dfc-a339-fc8880d9c0e8"}
+HTTP 401
+
+=== 6. Chave inválida (401)
+$ curl -X POST http://localhost:8000/v1/score -H 'X-API-Key: chave-errada' -d '<cliente>'
+{"erro":{"codigo":"chave_invalida","mensagem":"Chave de API inválida ou revogada.","detalhes":null},"id_requisicao":"db4a8251-ef62-4b07-b598-39d60b32566d"}
+HTTP 401
+
+=== 7. Payload inválido (422)
+$ curl -X POST http://localhost:8000/v1/score -H 'X-API-Key: ***' -d '{"Age": 500, "Credit_Mix": "Ótimo"}'
+{"erro":{"codigo":"payload_invalido","mensagem":"Um ou mais campos são inválidos.","detalhes":[{"campo":"Age","problema":"Input should be less than or equal to 100"},{"campo":"Annual_Income","problema":"Field required"},{"campo":"Monthly_Inhand_Salary","problema":"Field required"},{"campo":"Num_Bank_Accounts","problema":"Field required"},{"campo":"Num_Credit_Card","problema":"Field required"},{"campo":"Interest_Rate","problema":"Field required"},{"campo":"Num_of_Loan","problema":"Field required"},{"campo":"Delay_from_due_date","problema":"Field required"},{"campo":"Num_of_Delayed_Payment","problema":"Field required"},{"campo":"Changed_Credit_Limit","problema":"Field required"},{"campo":"Num_Credit_Inquiries","problema":"Field required"},{"campo":"Outstanding_Debt","problema":"Field required"},{"campo":"Credit_Utilization_Ratio","problema":"Field required"},{"campo":"Credit_History_Age","problema":"Field required"},{"campo":"Total_EMI_per_month","problema":"Field required"},{"campo":"Amount_invested_monthly","problema":"Field required"},{"campo":"Monthly_Balance","problema":"Field required"},{"campo":"Credit_Mix","problema":"Input should be 'Bad', 'Standard' or 'Good'"},{"campo":"Payment_of_Min_Amount","problema":"Field required"},{"campo":"Payment_Behaviour","problema":"Field required"}]},"id_requisicao":"90e8de10-1240-4850-959f-adca18c50c01"}
+HTTP 422
+
+=== 8. JSON malformado (422)
+$ curl -X POST http://localhost:8000/v1/score -H 'X-API-Key: ***' -d '{Age: 23'
+{"erro":{"codigo":"payload_invalido","mensagem":"Um ou mais campos são inválidos.","detalhes":[{"campo":"corpo","problema":"JSON decode error"}]},"id_requisicao":"1da609eb-4b58-42e7-9f80-bbf21976411c"}
+HTTP 422
+
+=== 9. Recarregar modelo com chave comum (403)
+$ curl -X POST http://localhost:8000/v1/modelo/recarregar -H 'X-API-Key: ***'
+{"erro":{"codigo":"acesso_negado","mensagem":"Esta operação exige chave administrativa.","detalhes":null},"id_requisicao":"a5a07c01-b921-45d0-970e-8a162921be78"}
+HTTP 403
+
+=== 10. Recarregar modelo com chave admin (200)
+$ curl -X POST http://localhost:8000/v1/modelo/recarregar -H 'X-API-Key: ***admin***'
+{"nome":"quantumfinance-credit-score","versao":"4","alias":"champion","algoritmo":"gradient_boosting","run_id":"24a3376692c84f48b4982ddba2355da6","carregado_em":"2026-09-28T22:10:02+00:00"}
+HTTP 200
+
+=== 11. Método errado (405) e rota inexistente (404)
+$ curl http://localhost:8000/v1/score ; curl http://localhost:8000/v2/score
+{"erro":{"codigo":"metodo_nao_permitido","mensagem":"Método GET não permitido em /v1/score.","detalhes":null},"id_requisicao":"f4715c0a-e71b-4a2e-aae4-06bedfe9291b"}
+HTTP 405
+{"erro":{"codigo":"rota_inexistente","mensagem":"Rota /v2/score não encontrada.","detalhes":null},"id_requisicao":"007eb755-a88b-4958-a865-d6fe0f7af7f0"}
+HTTP 404
+
+=== 12. Throttling: 35 chamadas seguidas (limite 30/minuto)
+$ for i in $(seq 35); do curl -s -o /dev/null -w '%{http_code} ' http://localhost:8000/v1/modelo -H 'X-API-Key: ***'; done
+200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 429 429 429 429 429 429 
+Resposta da chamada bloqueada:
+HTTP/1.1 429 Too Many Requests
+x-ratelimit-limit: 30
+x-ratelimit-remaining: 0
+x-ratelimit-reset: 1790633463.4484808
+retry-after: 60
+{"erro":{"codigo":"limite_excedido","mensagem":"Limite de requisições excedido (30 per 1 minute). Aguarde e tente novamente.","detalhes":null},"id_requisicao":"bfa5c260-1e01-4af4-8d14-80643fbc10e9"}

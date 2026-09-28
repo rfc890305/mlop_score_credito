@@ -1,0 +1,18 @@
+# Sobe a API e a interface do MLflow compartilhando o mesmo tracking (pasta do projeto em /app).
+# O MLflow grava caminhos ABSOLUTOS dos artefatos, por isso o treino também roda no container:
+#   docker compose run --rm api python src/treinamento.py
+#   docker compose up -d
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    user: root                      # permite gravar mlflow.db no volume montado
+    volumes:
+      - .:/app
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.16.1
+    command: mlflow ui --backend-store-uri sqlite:////app/mlflow.db --host 0.0.0.0 --port 5000
+    ports: ["5000:5000"]
+    volumes:
+      - .:/app

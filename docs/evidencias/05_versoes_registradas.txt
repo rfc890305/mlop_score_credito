@@ -1,0 +1,6 @@
+$ python src/promover_modelo.py --listar
+v1   aliases=[] status=arquivado algoritmo=gradient_boosting f1=0.6847
+v2   aliases=[] status=rejeitado algoritmo=gradient_boosting f1=0.6847
+v3   aliases=[] status=rejeitado algoritmo=gradient_boosting f1=0.6875
+v4   aliases=['challenger', 'champion'] status=producao algoritmo=gradient_boosting f1=0.7009
+(código de saída: 0)
