@@ -1,0 +1,12 @@
+# Versões usadas e validadas na execução deste projeto (Python 3.11)
+mlflow==3.16.1
+scikit-learn==1.9.1
+skops==0.16.0
+pandas==3.0.6
+numpy==2.4.6
+matplotlib==3.11.2
+PyYAML==6.0.3
+fastapi==0.141.1
+pydantic==2.13.5
+uvicorn==0.54.0
+slowapi==0.1.10

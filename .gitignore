@@ -1,0 +1,19 @@
+# Ambiente
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+
+# Dados: o dataset bruto (data/raw, ~46 MB) é versionado aqui porque o build do
+# Cloud Run treina o modelo a partir dele. Em produção real, use DVC ou um bucket.
+data/processed/*
+data/predictions/*
+!data/**/.gitkeep
+
+# Artefatos do MLflow (ficam no servidor de tracking / bucket de artefatos)
+mlflow.db
+mlartifacts/
+mlruns/
+models/*
+!models/.gitkeep

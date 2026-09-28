@@ -1,0 +1,11 @@
+$ python src/treinamento.py
+[dados] treino: 37500 linhas (May,June,July)
+[dados] validação: 12500 linhas (August)
+[candidato] regressao_logistica  f1_macro=0.5771 accuracy=0.5792 recall_Poor=0.6380
+[candidato] arvore_decisao       f1_macro=0.5938 accuracy=0.5937 recall_Poor=0.6979
+[candidato] gradient_boosting    f1_macro=0.6847 accuracy=0.6888 recall_Poor=0.7490
+[registry] quantumfinance-credit-score v2 registrada (gradient_boosting) -> alias 'challenger'
+[promoção] REJEITADA: produção continua em v1
+           - f1_macro=0.6847 não supera produção (0.6847) + ganho mínimo 0.005
+{"run_id": "a699d8088d8945a284a41e8185d54bbe", "versao": 2, "promovido": false}
+(código de saída: 0)

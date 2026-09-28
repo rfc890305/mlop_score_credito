@@ -1,0 +1,26 @@
+flowchart LR
+    subgraph DADOS["1 · Dados"]
+        RAW[("data/raw<br/>train.csv · test.csv")]
+    end
+    subgraph TREINO["2 · Treino e rastreio · src/treinamento.py"]
+        FILTRO["Filtra os 4 meses<br/>mais recentes"] --> CAND["Treina candidatos<br/>LogReg · Árvore · GBoost"]
+        CAND --> MLF[("MLflow Tracking<br/>params · métricas · gráficos<br/>dataset · modelo")]
+    end
+    subgraph REG["3 · Versionamento · Model Registry"]
+        VER["Nova versão vN<br/>alias challenger"]
+        CRIT{"Critério:<br/>F1 ≥ 0,60 · recall Poor ≥ 0,60<br/>F1 ≥ champion + 0,005"}
+        CHAMP["alias champion → vN<br/>versão anterior: arquivado"]
+        REJ["vN: rejeitado<br/>champion mantido"]
+        VER --> CRIT
+        CRIT -- aprovado --> CHAMP
+        CRIT -- reprovado --> REJ
+    end
+    subgraph SERV["4 · Consumo do modelo"]
+        INF["src/inferencia.py<br/>lote → data/predictions"]
+        API["API FastAPI<br/>X-API-Key · throttling<br/>/v1/score"]
+    end
+    RAW --> FILTRO
+    MLF --> VER
+    CHAMP -- "models:/…@champion" --> INF
+    CHAMP -- "models:/…@champion" --> API
+    API -. "novos dados / monitoramento" .-> RAW
