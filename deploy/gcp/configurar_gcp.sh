@@ -3,7 +3,7 @@
 # Execute no Cloud Shell (ou com gcloud autenticado) e ajuste as 3 variáveis abaixo.
 set -euo pipefail
 
-PROJECT_ID="seu-projeto-gcp"            # ID do projeto no Google Cloud
+PROJECT_ID="consultorfinanceiroai"      # ID do projeto no Google Cloud
 REGION="southamerica-east1"             # São Paulo
 GITHUB_REPO="rfc890305/mlop_score_credito"
 
@@ -46,7 +46,9 @@ python3 -c "import secrets;print(secrets.token_urlsafe(32))" | tr -d '\n' | \
   gcloud secrets create qf-api-keys --data-file=- || true
 python3 -c "import secrets;print(secrets.token_urlsafe(32))" | tr -d '\n' | \
   gcloud secrets create qf-admin-keys --data-file=- || true
-RUNTIME_SA="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"   # conta padrão do Cloud Run
+echo "6) Conta de serviço com que a API roda no Cloud Run (só lê os segredos)"
+gcloud iam service-accounts create api-score-runtime --display-name="API score (Cloud Run)" || true
+RUNTIME_SA="api-score-runtime@$PROJECT_ID.iam.gserviceaccount.com"
 for S in qf-api-keys qf-admin-keys; do
   gcloud secrets add-iam-policy-binding "$S" --member="serviceAccount:$RUNTIME_SA" \
     --role=roles/secretmanager.secretAccessor >/dev/null
@@ -57,6 +59,7 @@ echo "Pronto. Cadastre estas VARIÁVEIS no GitHub (Settings > Secrets and variab
 echo "  GCP_PROJECT_ID      = $PROJECT_ID"
 echo "  GCP_REGION          = $REGION"
 echo "  GCP_SERVICE_ACCOUNT = $SA"
+echo "  GCP_RUNTIME_SA      = $RUNTIME_SA"
 echo "  GCP_WIF_PROVIDER    = projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/providers/$PROVIDER"
 echo
 echo "Para ver a chave de parceiro: gcloud secrets versions access latest --secret=qf-api-keys"

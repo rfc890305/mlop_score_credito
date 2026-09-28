@@ -2,7 +2,7 @@
 # no Artifact Registry, deploy no Cloud Run e criação automática da tag de versão.
 #
 # Configuração (Settings > Secrets and variables > Actions > Variables):
-#   GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT
+#   GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT, GCP_RUNTIME_SA
 # Nenhuma chave de conta de serviço é usada: a autenticação é por Workload Identity Federation.
 name: ci-cd
 
@@ -82,6 +82,7 @@ jobs:
             --allow-unauthenticated
             --memory=1Gi
             --max-instances=3
+            --service-account=${{ vars.GCP_RUNTIME_SA }}
             --set-secrets=QF_API_KEYS=qf-api-keys:latest,QF_ADMIN_KEYS=qf-admin-keys:latest
 
       - name: Smoke test
