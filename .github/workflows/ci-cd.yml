@@ -66,6 +66,8 @@ jobs:
 
       - name: Build e push da imagem (treina o modelo dentro do build)
         run: |
+          gcloud artifacts repositories describe "$REPOSITORIO_AR" --location=${{ vars.GCP_REGION }} >/dev/null \
+            || { echo "::error::Repositório '$REPOSITORIO_AR' não existe no Artifact Registry em ${{ vars.GCP_REGION }}. Rode deploy/gcp/configurar_gcp.sh"; exit 1; }
           gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
           docker build -f deploy/gcp/Dockerfile \
             -t "$IMAGEM:$VERSAO" -t "$IMAGEM:${{ github.sha }}" .
