@@ -45,6 +45,7 @@ def test_score_ok(cliente):
     assert corpo["score"] in {"Poor", "Standard", "Good"}
     assert abs(sum(corpo["probabilidades"].values()) - 1) < 1e-3
     assert corpo["modelo"]["alias"] == "champion" and "X-Request-ID" in r.headers
+    assert corpo["modelo"]["f1_macro_validacao"] > 0.6
 
 
 def test_score_lote(cliente):

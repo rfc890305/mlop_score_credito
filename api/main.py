@@ -37,7 +37,8 @@ from slowapi.errors import RateLimitExceeded
 
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "src"))
-from credit_score.config import carregar_config  # noqa: E402
+from credit_score.config import carregar_config, tracking_uri  # noqa: E402
+from credit_score.registro_remoto import baixar_registry, origem_registry  # noqa: E402
 from inferencia import carregar_modelo_producao, prever  # noqa: E402
 
 from .esquemas import (DadosCliente, InfoModelo, RequisicaoLote, RespostaErro,  # noqa: E402
@@ -63,10 +64,19 @@ class GerenciadorModelo:
         self._trava = threading.Lock()
 
     def carregar(self) -> InfoModelo:
+        origem = origem_registry()
+        if origem:   # registry persistente (bucket): traz a versão mais recente do mlflow.db
+            uri = tracking_uri(CFG)
+            if not uri.startswith("sqlite:///"):
+                raise RuntimeError("QF_REGISTRY_URI exige tracking_uri sqlite")
+            baixar_registry(origem, Path(uri.removeprefix("sqlite:///")))
+            log.info("registry sincronizado de %s", origem)
         modelo, meta = carregar_modelo_producao(CFG)
         info = InfoModelo(nome=meta["nome_modelo"], versao=str(meta["versao"]),
                           alias=meta["alias"], algoritmo=meta["algoritmo"], run_id=meta["run_id"],
-                          carregado_em=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+                          carregado_em=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                          f1_macro_validacao=meta.get("f1_macro_validacao"),
+                          versao_release=os.getenv("QF_VERSAO_RELEASE"))
         with self._trava:            # troca atômica: requisições em andamento não são afetadas
             self.modelo, self.info = modelo, info
         log.info("modelo carregado: %s v%s (%s)", info.nome, info.versao, info.algoritmo)

@@ -63,6 +63,8 @@ class InfoModelo(BaseModel):
     algoritmo: str | None = None
     run_id: str | None = None
     carregado_em: str | None = None
+    f1_macro_validacao: float | None = Field(None, description="F1 macro do modelo na validação out-of-time")
+    versao_release: str | None = Field(None, description="Versão da imagem publicada (tag v1.0.<n> do CI/CD)")
 
 
 class ResultadoScore(BaseModel):

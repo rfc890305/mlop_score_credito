@@ -22,7 +22,7 @@ PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectN
 
 echo "1) Ativando APIs"
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
-  secretmanager.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
+  secretmanager.googleapis.com iamcredentials.googleapis.com sts.googleapis.com storage.googleapis.com
 
 echo "2) Repositório de imagens (Artifact Registry)"
 garantir "gcloud artifacts repositories describe credit-score --location=$REGION" \
@@ -62,7 +62,20 @@ for S in qf-api-keys qf-admin-keys; do
     --role=roles/secretmanager.secretAccessor >/dev/null
 done
 
-echo "7) Conferência final"
+echo "7) Bucket do registry persistente do MLflow (mlflow.db + artefatos dos modelos)"
+BUCKET="$PROJECT_ID-mlflow"
+garantir "gcloud storage buckets describe gs://$BUCKET" \
+  "gcloud storage buckets create gs://$BUCKET --location=$REGION --uniform-bucket-level-access"
+gcloud storage buckets update "gs://$BUCKET" --versioning >/dev/null   # guarda versões anteriores do mlflow.db
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+  --member="serviceAccount:$SA" --role=roles/storage.objectAdmin >/dev/null      # CI: lê e grava o registry
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+  --member="serviceAccount:$RUNTIME_SA" --role=roles/storage.objectViewer >/dev/null   # API: só lê
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+  --member="serviceAccount:$SA" --role=roles/storage.legacyBucketReader >/dev/null  # CI: conferir o bucket
+
+echo "8) Conferência final"
+gcloud storage buckets describe "gs://$BUCKET" --format="value(name)"
 gcloud artifacts repositories describe credit-score --location="$REGION" --format="value(name)"
 gcloud iam workload-identity-pools providers describe "$PROVIDER" --location=global --workload-identity-pool="$POOL" --format="value(name)"
 
@@ -74,4 +87,6 @@ echo "  GCP_SERVICE_ACCOUNT = $SA"
 echo "  GCP_RUNTIME_SA      = $RUNTIME_SA"
 echo "  GCP_WIF_PROVIDER    = projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/providers/$PROVIDER"
 echo
-echo "Para ver a chave de parceiro: gcloud secrets versions access latest --secret=qf-api-keys"
+echo "Bucket do registry do MLflow: gs://$BUCKET (o workflow usa esse nome por padrão)"
+echo
+echo "Chaves da API: bash deploy/gcp/gerenciar_chaves.sh listar | criar | revogar <início da chave>"

@@ -1,19 +1,19 @@
 # Imagem para o Google Cloud Run.
-# O modelo é treinado DURANTE o build: a imagem já sai com o registry do MLflow
-# (mlflow.db + mlartifacts) e com o alias champion apontando para o modelo aprovado.
-# Assim cada imagem é imutável: versão do código + versão do modelo + dados usados.
+# A imagem leva só o código da API. O modelo NÃO é treinado aqui: ao iniciar, a API
+# baixa o registry do MLflow do Cloud Storage (QF_REGISTRY_URI) e carrega o modelo
+# com alias champion. Assim, a versão do modelo segue o registry persistente, e um
+# rollback ou nova promoção não exige rebuild da imagem.
 FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 MLFLOW_DISABLE_AGENT_HINT=1
+# Versão da release (v1.0.<n>), informada pelo CI e devolvida em GET /v1/modelo
+ARG VERSAO_RELEASE=dev
+ENV QF_VERSAO_RELEASE=${VERSAO_RELEASE}
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY config/ config/
 COPY src/ src/
 COPY api/ api/
-COPY data/raw/train.csv data/raw/train.csv
-# Treina, rastreia e promove. O build falha se não houver modelo champion ao final.
-RUN python src/treinamento.py && python src/promover_modelo.py --listar | grep -q champion \
-    && rm -f data/raw/train.csv
 RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser
 # O Cloud Run informa a porta na variável PORT

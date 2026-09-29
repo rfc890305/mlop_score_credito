@@ -22,8 +22,9 @@ quantumfinance-credit-score/
 ├── .dockerignore
 ├── .github/workflows/ci-cd.yml       # CI/CD: testes em todo push/PR; na main, build, deploy no Cloud Run e tag de versão
 ├── deploy/gcp/
-│   ├── Dockerfile                    # imagem do Cloud Run (treina o modelo no build)
-│   └── configurar_gcp.sh             # configuração única do GCP (Artifact Registry, WIF, Secret Manager)
+│   ├── Dockerfile                    # imagem da API no Cloud Run (o modelo vem do registry no bucket)
+│   ├── configurar_gcp.sh             # configuração única do GCP (Artifact Registry, WIF, Secret Manager, bucket)
+│   └── gerenciar_chaves.sh           # emitir, listar e revogar chaves de parceiros/avaliadores
 │
 ├── config/
 │   ├── config.yaml                   # FONTE ÚNICA de parâmetros: dados, janela temporal, MLflow,
@@ -40,11 +41,14 @@ quantumfinance-credit-score/
 │                                     # (predicoes_v<versão>_<data>.csv)
 │
 ├── notebooks/
-│   └── 01_analise_exploratoria.ipynb # EDA; apenas exploração, nenhuma regra de produção
+│   ├── 01_analise_exploratoria.ipynb # EDA; apenas exploração, nenhuma regra de produção
+│   ├── 02_avaliacao_api_colab.ipynb  # Colab: chama a API no Cloud Run e mede a qualidade com dados rotulados
+│   └── 03_aplicacao_emprestimo_colab.ipynb # Colab: sistema do parceiro (pedido de empréstimo → API → SIM/NÃO)
 │
 ├── src/                              # código de produção
 │   ├── credit_score/                 # pacote compartilhado (treino, inferência e API)
 │   │   ├── config.py                 # leitura do config.yaml e resolução da URI do MLflow
+│   │   ├── registro_remoto.py        # registry persistente: baixa o mlflow.db do bucket (API)
 │   │   └── processamento.py          # limpeza + features + pré-processador (evita divergência treino/produção)
 │   ├── treinamento.py                # ENTREGÁVEL 2: treino, rastreio, critério e promoção
 │   ├── inferencia.py                 # ENTREGÁVEL 3: inferência com a última versão promovida
@@ -57,7 +61,8 @@ quantumfinance-credit-score/
 │
 ├── tests/                            # testes automatizados (pytest)
 │   ├── test_processamento.py         # limpeza de dados
-│   └── test_api.py                   # autenticação, validação, throttling, respostas
+│   ├── test_api.py                   # autenticação, validação, throttling, respostas
+│   └── test_registro_remoto.py       # sincronização do registry persistente
 │
 ├── scripts/
 │   └── exemplos_chamadas.sh          # exemplos de chamadas à API (sucesso e erros)
@@ -69,6 +74,7 @@ quantumfinance-credit-score/
 │   ├── ESTRUTURA_REPOSITORIO.md      # ENTREGÁVEL 1: este documento
 │   ├── API.md                        # ENTREGÁVEL 4: documentação da API
 │   ├── DEPLOY_GCP.md                 # deploy no Google Cloud com CI/CD
+│   ├── CICLO_NOVA_VERSAO.md          # roteiro e evidências: baseline, melhora, rejeição e rollback
 │   ├── imagens/                      # diagramas e capturas de tela (Swagger, MLflow)
 │   └── evidencias/                   # logs reais das execuções (treinos, promoções, inferência, API)
 │
@@ -99,7 +105,8 @@ quantumfinance-credit-score/
 | 4. Avaliação e promoção | `src/treinamento.py` (ou `promover_modelo.py`, manual) | candidato × `champion` na mesma validação | alias `champion` movido (ou versão marcada como `rejeitado`) |
 | 5. Inferência em lote | `src/inferencia.py` | `models:/quantumfinance-credit-score@champion`, `data/raw/test.csv` | `data/predictions/predicoes_v<N>_<data>.csv` |
 | 6. Inferência online | `api/main.py` | `models:/...@champion` | respostas JSON com versão do modelo e `X-Request-ID` |
-| 7. Retreino e deploy | CI/CD (`ci-cd.yml`, push na main ou `workflow_dispatch`) | novos dados em `data/raw` | volta à etapa 2 |
+| 7. Retreino e deploy | CI/CD (`ci-cd.yml`, push na main ou `workflow_dispatch`) | registry do bucket + novos dados/config | nova versão comparada com o champion real; deploy e release `v1.0.<n>` |
+| 8. Consumo pela aplicação | `notebooks/03_aplicacao_emprestimo_colab.ipynb` | API publicada | decisões SIM/NÃO com a versão do modelo registrada |
 
 ## 4. Convenções
 

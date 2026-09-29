@@ -14,7 +14,18 @@ segura com autenticação e throttling, tudo documentado.
 | 3 | Script de inferência com a última versão promovida | [`src/inferencia.py`](src/inferencia.py) |
 | 4 | Documentação da API (endpoint, chamada, respostas, FAQ, deploy) | [`docs/API.md`](docs/API.md) |
 | + | Deploy no Google Cloud com CI/CD e versionamento automático | [`docs/DEPLOY_GCP.md`](docs/DEPLOY_GCP.md), [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml), [`deploy/gcp/`](deploy/gcp) |
+| + | Aplicação cliente no Colab: pedido de empréstimo → API → SIM/NÃO | [`notebooks/03_aplicacao_emprestimo_colab.ipynb`](notebooks/03_aplicacao_emprestimo_colab.ipynb) ([abrir no Colab](https://colab.research.google.com/github/rfc890305/mlop_score_credito/blob/main/notebooks/03_aplicacao_emprestimo_colab.ipynb)) |
+| + | Avaliação da API publicada com dados rotulados, no Colab | [`notebooks/02_avaliacao_api_colab.ipynb`](notebooks/02_avaliacao_api_colab.ipynb) ([abrir no Colab](https://colab.research.google.com/github/rfc890305/mlop_score_credito/blob/main/notebooks/02_avaliacao_api_colab.ipynb)) |
+| + | Ciclo de nova versão (melhora, rejeição e rollback) com evidências | [`docs/CICLO_NOVA_VERSAO.md`](docs/CICLO_NOVA_VERSAO.md) |
 | + | Evidências reais de execução (logs e telas) | [`docs/evidencias/`](docs/evidencias) e [`docs/imagens/`](docs/imagens) |
+
+## Como testar a API publicada
+
+1. Peça uma chave ao responsável pelo projeto. Ele gera a chave com `bash deploy/gcp/gerenciar_chaves.sh criar`.
+2. Abra um dos notebooks pelo link "abrir no Colab" da tabela acima. No Colab, clique na chave 🔑 (Secrets),
+   crie o segredo `QF_API_KEY` com a chave e ative o acesso do notebook.
+3. Rode as células. Outra opção é abrir `https://api-score-credito-czkhbhag2q-rj.a.run.app/docs`, clicar em
+   **Authorize**, colar a chave e usar **Try it out**.
 
 ## Resumo da solução
 
@@ -56,7 +67,7 @@ python src/inferencia.py                   # lote: data/raw/test.csv -> data/pre
 cp .env.example .env                       # defina QF_API_KEYS e QF_ADMIN_KEYS
 make api                                   # API em http://localhost:8000 (Swagger em /docs)
 make mlflow-ui                             # MLflow em http://localhost:5000
-python -m pytest -q tests                  # 12 testes (exigem um modelo champion)
+python -m pytest -q tests                  # 15 testes (exigem um modelo champion)
 ```
 
 > O MLflow grava caminhos absolutos dos artefatos. Por isso `mlflow.db` e `mlartifacts/` **não**
@@ -66,6 +77,6 @@ python -m pytest -q tests                  # 12 testes (exigem um modelo champio
 ## Ambiente validado
 
 Python 3.11, mlflow 3.16.1, scikit-learn 1.9.1, pandas 3.0.6, FastAPI 0.141.1, slowapi 0.1.10.
-Treino, inferência, API e testes foram executados de fato (12 testes passando). O `Dockerfile`
+Treino, inferência, API e testes foram executados de fato (15 testes passando). O `Dockerfile`
 e o `docker-compose.yml` estão incluídos, mas não foram executados neste ambiente, porque não
 havia daemon Docker disponível.
