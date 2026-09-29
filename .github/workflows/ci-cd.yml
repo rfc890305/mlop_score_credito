@@ -13,6 +13,7 @@
 # Variáveis (Settings > Secrets and variables > Actions > Variables):
 #   GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT, GCP_RUNTIME_SA
 #   GCP_MLFLOW_BUCKET (opcional; padrão: <GCP_PROJECT_ID>-mlflow)
+#   GCP_CHAVES_BUCKET (opcional; padrão: <GCP_PROJECT_ID>-api-chaves)
 # Nenhuma chave de conta de serviço é usada: a autenticação é por Workload Identity Federation.
 name: ci-cd
 
@@ -79,6 +80,7 @@ jobs:
       VERSAO: v1.0.${{ github.run_number }}
       IMAGEM: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/credit-score/api-score-credito
       BUCKET: ${{ vars.GCP_MLFLOW_BUCKET || format('{0}-mlflow', vars.GCP_PROJECT_ID) }}
+      BUCKET_CHAVES: ${{ vars.GCP_CHAVES_BUCKET || format('{0}-api-chaves', vars.GCP_PROJECT_ID) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +102,8 @@ jobs:
         run: |
           gcloud storage buckets describe "gs://$BUCKET" >/dev/null \
             || { echo "::error::Bucket gs://$BUCKET não existe. Rode deploy/gcp/configurar_gcp.sh"; exit 1; }
+          gcloud storage buckets describe "gs://$BUCKET_CHAVES" >/dev/null \
+            || { echo "::error::Bucket gs://$BUCKET_CHAVES (autocadastro de chaves) não existe. Rode deploy/gcp/configurar_gcp.sh"; exit 1; }
           if gcloud storage cp "gs://$BUCKET/mlflow.db" mlflow.db; then
             echo "Registry existente:"; python src/promover_modelo.py --listar
           else
@@ -162,13 +166,14 @@ jobs:
           image: ${{ env.IMAGEM }}:${{ env.VERSAO }}
           env_vars: |
             QF_REGISTRY_URI=gs://${{ env.BUCKET }}
+            QF_CHAVES_URI=gs://${{ env.BUCKET_CHAVES }}
           # a autenticação é feita pela própria API (X-API-Key); o Cloud Run fica público
           flags: >-
             --allow-unauthenticated
             --memory=1Gi
             --max-instances=3
             --service-account=${{ vars.GCP_RUNTIME_SA }}
-            --set-secrets=QF_API_KEYS=qf-api-keys:latest,QF_ADMIN_KEYS=qf-admin-keys:latest
+            --set-secrets=QF_API_KEYS=qf-api-keys:latest,QF_ADMIN_KEYS=qf-admin-keys:latest,QF_CODIGO_CONVITE=qf-codigo-convite:latest
 
       - name: Smoke test (a API carregou o champion do registry?)
         run: |

@@ -30,6 +30,7 @@ URL base (servidor local): **`http://localhost:8000`**
 | `POST` | `/v1/score/lote` | `X-API-Key` | 30/min por chave | Score de **até 100** clientes em uma chamada |
 | `GET` | `/v1/modelo` | `X-API-Key` | 30/min por chave | Versão do modelo em produção |
 | `POST` | `/v1/modelo/recarregar` | `X-API-Key` **admin** | 5/min | Recarrega o modelo após uma nova promoção |
+| `POST` | `/v1/chaves` | código de convite no corpo | 5/hora por IP | **Autocadastro**: gera uma chave pessoal (válida por 30 dias) |
 | `GET` | `/health` | nenhuma | — | Verificação de saúde (monitoramento / load balancer) |
 | `GET` | `/docs` | nenhuma | — | Documentação interativa (Swagger UI), permite testar as chamadas |
 | `GET` | `/redoc` | nenhuma | — | Documentação de referência (ReDoc) |
@@ -55,7 +56,27 @@ URL base (servidor local): **`http://localhost:8000`**
 - Não usar query string (`?key=`): a chave ficaria em logs de proxies e no histórico do navegador.
 - Cada parceiro recebe uma chave própria; a revogação é feita removendo-a de `QF_API_KEYS`
   e reiniciando a API.
-- **Como obter uma chave (ambiente publicado):** a chave é emitida pelo responsável do projeto, que roda
+- **Como obter uma chave (ambiente publicado), jeito mais fácil: autocadastro com código de convite.**
+  O responsável do projeto passa o código (`bash deploy/gcp/gerenciar_chaves.sh convite`) e cada pessoa gera a
+  própria chave, sem depender de ninguém, pela célula "Não tem chave?" dos notebooks do Colab ou assim:
+
+  ```bash
+  curl -X POST https://api-score-credito-czkhbhag2q-rj.a.run.app/v1/chaves \
+    -H "Content-Type: application/json" \
+    -d '{"nome": "Prof. Avaliador", "email": "avaliador@exemplo.com", "codigo_convite": "<código>"}'
+  # 201 -> {"chave": "...", "prefixo": "...", "expira_em": "...", ...}  (a chave só aparece nesta resposta)
+  ```
+
+  Como o cadastro é protegido:
+  - sem o código de convite a API responde `403 convite_invalido`; o código fica no Secret Manager
+    (`qf-codigo-convite`) e pode ser trocado com `novo-convite` sem invalidar as chaves já emitidas;
+  - no máximo **5 pedidos por hora por IP** (tentativas com código errado também contam), o que impede
+    adivinhar o código por força bruta;
+  - a chave **não é gravada**: o bucket `consultorfinanceiroai-api-chaves` guarda só o hash SHA-256, com
+    nome, e-mail e validade (30 dias). A conta da API só cria e lê registros nesse bucket;
+  - `listar-emitidas` mostra quem tem chave e `revogar-emitida <prefixo>` a desativa em até 1 minuto,
+    sem novo deploy.
+- **Chave fixa (parceiros permanentes):** a chave é emitida pelo responsável do projeto, que roda
   `bash deploy/gcp/gerenciar_chaves.sh criar` no Cloud Shell e envia a chave por um canal privado.
   O script acrescenta a chave ao Secret Manager e atualiza o Cloud Run; `listar` mostra as chaves ativas
   (só as pontas) e `revogar <início da chave>` desativa uma chave sem afetar as outras.
@@ -253,6 +274,8 @@ Os sistemas integradores devem tratar o erro pelo **HTTP status + `erro.codigo`*
 | 401 | `chave_ausente` | Header `X-API-Key` não enviado | `Header X-API-Key não informado.` |
 | 401 | `chave_invalida` | Chave errada, com espaços extras ou revogada | `Chave de API inválida ou revogada.` |
 | 403 | `acesso_negado` | Chave de parceiro em endpoint administrativo | `Esta operação exige chave administrativa.` |
+| 403 | `convite_invalido` | Código de convite errado em `POST /v1/chaves` | `Código de convite inválido. Peça o código ao responsável do projeto.` |
+| 503 | `cadastro_indisponivel` | Autocadastro não configurado no ambiente (sem `QF_CHAVES_URI`/`QF_CODIGO_CONVITE`) | `O autocadastro de chaves não está habilitado neste ambiente.` |
 | 404 | `rota_inexistente` | URL errada (ex.: `/v2/score`, `/score`) | `Rota /v2/score não encontrada.` |
 | 405 | `metodo_nao_permitido` | Método errado (ex.: `GET /v1/score`) | `Método GET não permitido em /v1/score.` |
 | 413 | `lote_muito_grande` | Mais de 100 clientes no lote | `Máximo de 100 clientes por chamada; recebidos 101.` |

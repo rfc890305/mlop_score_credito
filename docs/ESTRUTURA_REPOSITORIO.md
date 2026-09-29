@@ -57,11 +57,13 @@ quantumfinance-credit-score/
 ├── api/                              # serviço REST (FastAPI)
 │   ├── main.py                       # endpoints, carga do modelo, erros padronizados
 │   ├── seguranca.py                  # autenticação X-API-Key + throttling (slowapi)
+│   ├── chaves_emitidas.py            # autocadastro de chaves (código de convite; só o hash no bucket)
 │   └── esquemas.py                   # contratos de entrada/saída (Pydantic → OpenAPI)
 │
 ├── tests/                            # testes automatizados (pytest)
 │   ├── test_processamento.py         # limpeza de dados
 │   ├── test_api.py                   # autenticação, validação, throttling, respostas
+│   ├── test_chaves.py                # autocadastro: convite, expiração, revogação, limite por IP
 │   └── test_registro_remoto.py       # sincronização do registry persistente
 │
 ├── scripts/

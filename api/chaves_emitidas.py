@@ -9,19 +9,23 @@ QF_CHAVES_URI (bucket `gs://...` em produção ou diretório local em testes):
 - A chave em si NUNCA é gravada: só o hash. Quem ler o bucket não consegue usá-la.
 - Validade limitada (QF_VALIDADE_CHAVE_DIAS, padrão 30 dias).
 - Revogar = apagar o registro (deploy/gcp/gerenciar_chaves.sh revogar-emitida).
-  O cache em memória faz a revogação valer em até CACHE_SEGUNDOS.
+  O cache em memória faz a revogação valer em até CACHE_SEGUNDOS. A conta de serviço
+  da API só cria e lê registros nesse bucket exclusivo (não altera o registry do modelo).
 - Não exige nova revisão do Cloud Run, ao contrário das chaves em QF_API_KEYS.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+log = logging.getLogger("qf.chaves")
 
 PREFIXO_OBJETOS = "chaves"
 CACHE_SEGUNDOS = 60
@@ -127,7 +131,11 @@ def chave_emitida_valida(chave: str) -> bool:
     if em_cache and agora - em_cache[0] < CACHE_SEGUNDOS:
         registro = em_cache[1]
     else:
-        registro = arm.ler(f"{PREFIXO_OBJETOS}/{h}.json")
+        try:
+            registro = arm.ler(f"{PREFIXO_OBJETOS}/{h}.json")
+        except Exception as exc:  # bucket fora do ar/sem permissão: recusa a chave, sem derrubar a API
+            log.error("falha ao consultar chaves emitidas: %s", exc)
+            return False
         with _trava:
             if len(_cache) > 10_000:
                 _cache.clear()

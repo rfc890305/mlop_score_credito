@@ -24,7 +24,7 @@ push / PR ──► GitHub Actions: job "testes"
 | Registry do modelo | Cloud Storage (`gs://consultorfinanceiroai-mlflow`) | `mlflow.db` (versões, aliases, runs, métricas) + artefatos dos modelos; persiste entre deploys, com versionamento de objetos |
 | Imagens versionadas | Artifact Registry (`credit-score`) | Guarda cada imagem da API com a tag `v1.0.<n>` e o SHA do commit |
 | Servidor da API | Cloud Run (serviço `api-score-credito`) | HTTPS automático, escala a zero, uma revisão por deploy |
-| Segredos | Secret Manager (`qf-api-keys`, `qf-admin-keys`) | As chaves da API nunca ficam no GitHub nem na imagem |
+| Segredos | Secret Manager (`qf-api-keys`, `qf-admin-keys`, `qf-codigo-convite`) | As chaves da API nunca ficam no GitHub nem na imagem |
 | Autenticação GitHub → GCP | Workload Identity Federation | Token OIDC temporário, restrito a este repositório |
 
 ### Como fica o versionamento
@@ -71,8 +71,9 @@ O `PROJECT_ID` já está definido como `consultorfinanceiroai`, e a região como
 | Conta de serviço | `github-deploy@...` | Usada pelo GitHub Actions para publicar e fazer o deploy |
 | Conta de serviço | `api-score-runtime@...` | Identidade com que a API roda (só lê os segredos) |
 | Workload Identity Pool + Provider | `github-pool` / `github-provider` | Permite que **somente** o repositório `rfc890305/mlop_score_credito` se autentique, sem chave JSON |
-| Segredos | `qf-api-keys`, `qf-admin-keys` | Chaves da API, geradas aleatoriamente |
+| Segredos | `qf-api-keys`, `qf-admin-keys`, `qf-codigo-convite` | Chaves da API e código de convite do autocadastro, gerados aleatoriamente |
 | Bucket | `consultorfinanceiroai-mlflow` | Registry persistente do MLflow; o GitHub grava e a API só lê |
+| Bucket | `consultorfinanceiroai-api-chaves` | Hash das chaves geradas pelo autocadastro (`POST /v1/chaves`); a API só cria e lê |
 
 Rodar o script de novo não causa problema: recursos que já existem são mantidos.
 No final, ele imprime 5 valores. Deixe essa tela aberta para o próximo passo.
@@ -144,6 +145,9 @@ Com `--max-instances=3` e escala a zero, um teste custa centavos. Para apagar tu
 | Abrir o registry de produção no MLflow | `gcloud storage cp gs://consultorfinanceiroai-mlflow/mlflow.db .` e `gcloud auth application-default login`; depois `mlflow ui --backend-store-uri sqlite:///mlflow.db` |
 | Dar uma chave a um parceiro ou avaliador | `bash deploy/gcp/gerenciar_chaves.sh criar` no Cloud Shell (a chave aparece entre marcadores, sem o prompt colado) |
 | Revogar uma chave | `bash deploy/gcp/gerenciar_chaves.sh revogar <primeiros caracteres>` |
+| Ver o código de convite do autocadastro | `bash deploy/gcp/gerenciar_chaves.sh convite` (envie junto com a URL da API) |
+| Trocar o código de convite | `bash deploy/gcp/gerenciar_chaves.sh novo-convite` (as chaves já emitidas continuam valendo) |
+| Ver / revogar chaves do autocadastro | `bash deploy/gcp/gerenciar_chaves.sh listar-emitidas` e `revogar-emitida <prefixo>` (vale em até 1 minuto, sem deploy) |
 
 O roteiro completo para demonstrar o ciclo (baseline, melhora, rejeição e rollback) está em
 [`CICLO_NOVA_VERSAO.md`](CICLO_NOVA_VERSAO.md).

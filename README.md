@@ -22,9 +22,11 @@ segura com autenticação e throttling, tudo documentado.
 
 ## Como testar a API publicada
 
-1. Peça uma chave ao responsável pelo projeto. Ele gera a chave com `bash deploy/gcp/gerenciar_chaves.sh criar`.
-2. Abra um dos notebooks pelo link "abrir no Colab" da tabela acima. No Colab, clique na chave 🔑 (Secrets),
-   crie o segredo `QF_API_KEY` com a chave e ative o acesso do notebook.
+1. Peça o **código de convite** ao responsável pelo projeto (ele o consulta com
+   `bash deploy/gcp/gerenciar_chaves.sh convite`).
+2. Abra um dos notebooks pelo link "abrir no Colab" da tabela acima e rode a célula **"Não tem chave?"**:
+   informe nome, e-mail e o código, e a API gera na hora a sua chave pessoal (válida por 30 dias). Guarde-a nos
+   Secrets do Colab 🔑 como `QF_API_KEY` para as próximas vezes. Detalhes em [`docs/API.md`](docs/API.md#22-autenticação).
 3. Rode as células. Outra opção é abrir `https://api-score-credito-czkhbhag2q-rj.a.run.app/docs`, clicar em
    **Authorize**, colar a chave e usar **Try it out**.
 
@@ -68,7 +70,7 @@ python src/inferencia.py                   # lote: data/raw/test.csv -> data/pre
 cp .env.example .env                       # defina QF_API_KEYS e QF_ADMIN_KEYS
 make api                                   # API em http://localhost:8000 (Swagger em /docs)
 make mlflow-ui                             # MLflow em http://localhost:5000
-python -m pytest -q tests                  # 15 testes (exigem um modelo champion)
+python -m pytest -q tests                  # 20 testes (exigem um modelo champion)
 ```
 
 > O MLflow grava caminhos absolutos dos artefatos. Por isso `mlflow.db` e `mlartifacts/` **não**
@@ -78,6 +80,6 @@ python -m pytest -q tests                  # 15 testes (exigem um modelo champio
 ## Ambiente validado
 
 Python 3.11, mlflow 3.16.1, scikit-learn 1.9.1, pandas 3.0.6, FastAPI 0.141.1, slowapi 0.1.10.
-Treino, inferência, API e testes foram executados de fato (15 testes passando). O `Dockerfile`
+Treino, inferência, API e testes foram executados de fato (20 testes passando). O `Dockerfile`
 e o `docker-compose.yml` estão incluídos, mas não foram executados neste ambiente, porque não
 havia daemon Docker disponível.

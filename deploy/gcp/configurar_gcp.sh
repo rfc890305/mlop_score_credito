@@ -48,16 +48,18 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" \
   --role=roles/iam.workloadIdentityUser \
   --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/attribute.repository/$GITHUB_REPO"
 
-echo "5) Chaves da API no Secret Manager (geradas aqui, nunca vão para o GitHub)"
+echo "5) Chaves da API e código de convite no Secret Manager (gerados aqui, nunca vão para o GitHub)"
 for S in qf-api-keys qf-admin-keys; do
   garantir "gcloud secrets describe $S" \
     "python3 -c 'import secrets;print(secrets.token_urlsafe(32), end=\"\")' | gcloud secrets create $S --data-file=-"
 done
+garantir "gcloud secrets describe qf-codigo-convite" \
+  "python3 -c 'import secrets;print(secrets.token_urlsafe(9), end=\"\")' | gcloud secrets create qf-codigo-convite --data-file=-"
 echo "6) Conta de serviço com que a API roda no Cloud Run (só lê os segredos)"
 RUNTIME_SA="api-score-runtime@$PROJECT_ID.iam.gserviceaccount.com"
 garantir "gcloud iam service-accounts describe $RUNTIME_SA" \
   "gcloud iam service-accounts create api-score-runtime --display-name='API score (Cloud Run)'"
-for S in qf-api-keys qf-admin-keys; do
+for S in qf-api-keys qf-admin-keys qf-codigo-convite; do
   gcloud secrets add-iam-policy-binding "$S" --member="serviceAccount:$RUNTIME_SA" \
     --role=roles/secretmanager.secretAccessor >/dev/null
 done
@@ -74,8 +76,20 @@ gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member="serviceAccount:$SA" --role=roles/storage.legacyBucketReader >/dev/null  # CI: conferir o bucket
 
-echo "8) Conferência final"
+echo "8) Bucket das chaves geradas pelo autocadastro (POST /v1/chaves; só o hash de cada chave)"
+BUCKET_CHAVES="$PROJECT_ID-api-chaves"
+garantir "gcloud storage buckets describe gs://$BUCKET_CHAVES" \
+  "gcloud storage buckets create gs://$BUCKET_CHAVES --location=$REGION --uniform-bucket-level-access"
+for ROLE in roles/storage.objectCreator roles/storage.objectViewer; do   # API: cria e lê; não apaga nem altera
+  gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_CHAVES" \
+    --member="serviceAccount:$RUNTIME_SA" --role="$ROLE" >/dev/null
+done
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_CHAVES" \
+  --member="serviceAccount:$SA" --role=roles/storage.legacyBucketReader >/dev/null  # CI: conferir o bucket
+
+echo "9) Conferência final"
 gcloud storage buckets describe "gs://$BUCKET" --format="value(name)"
+gcloud storage buckets describe "gs://$BUCKET_CHAVES" --format="value(name)"
 gcloud artifacts repositories describe credit-score --location="$REGION" --format="value(name)"
 gcloud iam workload-identity-pools providers describe "$PROVIDER" --location=global --workload-identity-pool="$POOL" --format="value(name)"
 
@@ -88,5 +102,7 @@ echo "  GCP_RUNTIME_SA      = $RUNTIME_SA"
 echo "  GCP_WIF_PROVIDER    = projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/providers/$PROVIDER"
 echo
 echo "Bucket do registry do MLflow: gs://$BUCKET (o workflow usa esse nome por padrão)"
+echo "Bucket das chaves do autocadastro: gs://$BUCKET_CHAVES (idem)"
+echo "Código de convite para o autocadastro: bash deploy/gcp/gerenciar_chaves.sh convite"
 echo
 echo "Chaves da API: bash deploy/gcp/gerenciar_chaves.sh listar | criar | revogar <início da chave>"
