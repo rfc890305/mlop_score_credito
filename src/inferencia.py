@@ -65,6 +65,7 @@ def carregar_modelo_producao(cfg: dict, versao: str | None = None):
         "algoritmo": mv.tags.get("algoritmo"),
         "run_id": mv.run_id,
         "status": mv.tags.get("status"),
+        "f1_macro_validacao": mv.tags.get("f1_macro_validacao"),
     }
     return modelo, meta
 

@@ -4,34 +4,40 @@
 
 ```text
 push / PR ──► GitHub Actions: job "testes"
-                 instala dependências → treina e promove (MLflow) → pytest
-                         │ (somente push na main e testes verdes)
+                 instala dependências → treino local (registry temporário) → pytest
+                         │ (somente push na main, ou "Run workflow", e testes verdes)
                          ▼
-              job "deploy"
+              job "treino-e-deploy"
                  autentica no GCP por Workload Identity Federation (sem chave JSON)
-                 docker build (deploy/gcp/Dockerfile treina o modelo dentro da imagem)
-                 push no Artifact Registry  :v1.0.<n>  e  :<sha do commit>
-                 deploy no Cloud Run (chaves da API vindas do Secret Manager)
-                 smoke test em /health
-                 cria a tag git v1.0.<n>
+                 baixa o registry de produção:  gs://consultorfinanceiroai-mlflow/mlflow.db
+                 treina e compara o candidato com o champion REAL (mesma validação de agosto)
+                     aprovado  → nova versão vira champion      rejeitado → champion não muda
+                 envia o registry de volta ao bucket (+ cópia histórica por release)
+                 docker build da API (sem treino) → Artifact Registry :v1.0.<n> e :<sha>
+                 deploy no Cloud Run (a API baixa o registry e carrega o champion ao iniciar)
+                 smoke test em /health → tag git + GitHub Release com a decisão e as métricas
 ```
 
 | Peça | Serviço | Papel |
 |---|---|---|
 | Testes e orquestração | GitHub Actions (`.github/workflows/ci-cd.yml`) | Roda em todo push e PR; bloqueia o deploy se algum teste falhar |
-| Imagens versionadas | Artifact Registry (`credit-score`) | Guarda cada imagem com a tag `v1.0.<n>` e o SHA do commit |
-| Servidor da API | Cloud Run (serviço `api-score-credito`, criado automaticamente no primeiro deploy) | HTTPS automático, escala a zero, uma revisão por deploy (permite rollback) |
+| Registry do modelo | Cloud Storage (`gs://consultorfinanceiroai-mlflow`) | `mlflow.db` (versões, aliases, runs, métricas) + artefatos dos modelos; persiste entre deploys, com versionamento de objetos |
+| Imagens versionadas | Artifact Registry (`credit-score`) | Guarda cada imagem da API com a tag `v1.0.<n>` e o SHA do commit |
+| Servidor da API | Cloud Run (serviço `api-score-credito`) | HTTPS automático, escala a zero, uma revisão por deploy |
 | Segredos | Secret Manager (`qf-api-keys`, `qf-admin-keys`) | As chaves da API nunca ficam no GitHub nem na imagem |
 | Autenticação GitHub → GCP | Workload Identity Federation | Token OIDC temporário, restrito a este repositório |
 
 ### Como fica o versionamento
 
-- **Código:** cada deploy bem-sucedido cria a tag git `v1.0.<número da execução>`.
-- **Imagem:** a mesma versão vira tag no Artifact Registry, junto com o SHA do commit.
-- **Modelo:** o build roda `src/treinamento.py` com os critérios de promoção. A imagem só é
-  gerada se existir um `champion`, e `GET /v1/modelo` informa a versão e o run do modelo servido.
-- **Rollback:** no Cloud Run, basta direcionar o tráfego para a revisão anterior:
-  `gcloud run services update-traffic api-score-credito --region=southamerica-east1 --to-revisions=<revisão>=100`.
+- **Modelo:** versões `v1`, `v2`, ... no MLflow Model Registry, que agora é persistente. Cada execução
+  registra um candidato; o critério de promoção (F1 macro ≥ 0,60, recall de `Poor` ≥ 0,60 e ganho mínimo de
+  0,005 sobre o champion reavaliado na mesma validação) decide se ele vira `champion` ou fica `rejeitado`.
+- **Código e imagem:** cada deploy bem-sucedido cria a tag git e a imagem `v1.0.<número da execução>`.
+- **Release:** cada deploy publica uma GitHub Release com o resumo do treino, a decisão de promoção e a
+  lista de versões do registry. `GET /v1/modelo` informa a versão do modelo, o F1 e a release em uso.
+- **Rollback do modelo:** Actions → ci-cd → **Run workflow**, informando a versão em `promover_versao`
+  (detalhes em [Operações do dia a dia](#operações-do-dia-a-dia)).
+- **Rollback da imagem:** `gcloud run services update-traffic api-score-credito --region=southamerica-east1 --to-revisions=<revisão>=100`.
 
 ## Passo a passo (projeto `consultorfinanceiroai`)
 
@@ -46,9 +52,10 @@ A configuração é feita uma única vez. Depois dela, todo merge na `main` faz 
 1. No console, clique no ícone **>_ Ativar o Cloud Shell**, no canto superior direito. Ele já vem com `gcloud`, `git` e `python3`.
 2. No terminal do Cloud Shell, rode:
    ```bash
-   git clone -b claude/estrutura-mlops https://github.com/rfc890305/mlop_score_credito.git
+   git clone https://github.com/rfc890305/mlop_score_credito.git
    cd mlop_score_credito
    ```
+   Se o repositório já foi clonado antes, atualize com `cd mlop_score_credito && git pull`.
    Se o repositório for privado, o `git clone` pede usuário e senha. Use seu usuário do GitHub e, como senha, um *Personal Access Token*. Outra opção é enviar só o arquivo `deploy/gcp/configurar_gcp.sh` pelo menu ⋮ → **Upload** do Cloud Shell.
 
 ### Passo 3: rodar o script de configuração
@@ -65,6 +72,7 @@ O `PROJECT_ID` já está definido como `consultorfinanceiroai`, e a região como
 | Conta de serviço | `api-score-runtime@...` | Identidade com que a API roda (só lê os segredos) |
 | Workload Identity Pool + Provider | `github-pool` / `github-provider` | Permite que **somente** o repositório `rfc890305/mlop_score_credito` se autentique, sem chave JSON |
 | Segredos | `qf-api-keys`, `qf-admin-keys` | Chaves da API, geradas aleatoriamente |
+| Bucket | `consultorfinanceiroai-mlflow` | Registry persistente do MLflow; o GitHub grava e a API só lê |
 
 Rodar o script de novo não causa problema: recursos que já existem são mantidos.
 No final, ele imprime 5 valores. Deixe essa tela aberta para o próximo passo.
@@ -125,14 +133,27 @@ Com `--max-instances=3` e escala a zero, um teste custa centavos. Para apagar tu
 `gcloud run services delete api-score-credito --region=southamerica-east1` e
 `gcloud artifacts repositories delete credit-score --location=southamerica-east1`.
 
+## Operações do dia a dia
+
+| Quero... | Como |
+|---|---|
+| Publicar uma melhora do modelo | PR alterando `config/config.yaml` (ou os dados em `data/raw`) → testes → merge. O pipeline treina, compara com o champion e só promove se passar no critério |
+| Retreinar sem mudar código | Actions → ci-cd → **Run workflow** (branch `main`, campos vazios) |
+| Fazer rollback do modelo | Actions → ci-cd → **Run workflow** com `promover_versao` = versão desejada e um `motivo`. O pipeline move o alias `champion`, grava o registry e faz um novo deploy |
+| Ver o histórico de versões | Aba **Releases** do GitHub, resumo de cada execução do Actions, ou `GET /v1/modelo` |
+| Abrir o registry de produção no MLflow | `gcloud storage cp gs://consultorfinanceiroai-mlflow/mlflow.db .` e `gcloud auth application-default login`; depois `mlflow ui --backend-store-uri sqlite:///mlflow.db` |
+| Dar uma chave a um parceiro ou avaliador | `bash deploy/gcp/gerenciar_chaves.sh criar` no Cloud Shell (a chave aparece entre marcadores, sem o prompt colado) |
+| Revogar uma chave | `bash deploy/gcp/gerenciar_chaves.sh revogar <primeiros caracteres>` |
+
+O roteiro completo para demonstrar o ciclo (baseline, melhora, rejeição e rollback) está em
+[`CICLO_NOVA_VERSAO.md`](CICLO_NOVA_VERSAO.md).
+
 ## Limitações desta arquitetura de teste e evolução
 
-- O MLflow fica **dentro da imagem**: cada build tem um registry novo, então o número de versão
-  do modelo reinicia a cada deploy (a versão rastreável é a tag `v1.0.<n>` da imagem). O histórico
-  de treino de cada execução fica salvo como artefato `mlflow-<n>` no GitHub Actions.
-- Em produção, o próximo passo é um **servidor MLflow compartilhado**: MLflow em Cloud Run com Cloud
-  SQL (PostgreSQL) como backend e um bucket no Cloud Storage para artefatos. Basta apontar a variável
-  `MLFLOW_TRACKING_URI` para ele no treino e na API. Com isso, a numeração das versões e o critério de
-  promoção passam a comparar com o champion real, e a API pode recarregar o modelo sem novo deploy.
+- O registry usa SQLite num bucket: o `concurrency` do workflow garante um treino por vez, e o bucket
+  guarda versões anteriores do arquivo. Com vários times treinando ao mesmo tempo, o próximo passo é um
+  **servidor MLflow** (Cloud Run + Cloud SQL), apontando `MLFLOW_TRACKING_URI` para ele.
+- `POST /v1/modelo/recarregar` recarrega só a instância que recebeu a chamada. Por isso, promoções e
+  rollbacks em produção passam pelo workflow, que cria uma revisão nova e recarrega todas as instâncias.
 - Throttling: com `--max-instances=3`, cada instância conta o limite separadamente. Para um limite
   global, use o Memorystore (Redis) em `QF_RATE_LIMIT_STORAGE`.

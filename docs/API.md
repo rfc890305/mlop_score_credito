@@ -5,6 +5,11 @@
 A API devolve o **score de crédito** (`Poor`, `Standard` ou `Good`) de clientes das empresas
 parceiras, com a probabilidade de cada classe e a versão do modelo que gerou o resultado.
 
+> **Ambiente publicado:** `https://api-score-credito-czkhbhag2q-rj.a.run.app` (Swagger em `/docs`).
+> Para testar sem instalar nada, use os notebooks do Colab:
+> [avaliação com dados rotulados](https://colab.research.google.com/github/rfc890305/mlop_score_credito/blob/main/notebooks/02_avaliacao_api_colab.ipynb) e
+> [aplicação de empréstimo (SIM/NÃO)](https://colab.research.google.com/github/rfc890305/mlop_score_credito/blob/main/notebooks/03_aplicacao_emprestimo_colab.ipynb).
+
 Sumário
 
 1. [Endpoints de acesso](#1-endpoints-de-acesso)
@@ -50,6 +55,10 @@ URL base (servidor local): **`http://localhost:8000`**
 - Não usar query string (`?key=`): a chave ficaria em logs de proxies e no histórico do navegador.
 - Cada parceiro recebe uma chave própria; a revogação é feita removendo-a de `QF_API_KEYS`
   e reiniciando a API.
+- **Como obter uma chave (ambiente publicado):** a chave é emitida pelo responsável do projeto, que roda
+  `bash deploy/gcp/gerenciar_chaves.sh criar` no Cloud Shell e envia a chave por um canal privado.
+  O script acrescenta a chave ao Secret Manager e atualiza o Cloud Run; `listar` mostra as chaves ativas
+  (só as pontas) e `revogar <início da chave>` desativa uma chave sem afetar as outras.
 - Existem dois perfis: **parceiro** (`QF_API_KEYS`, endpoints de score e consulta) e
   **administrador** (`QF_ADMIN_KEYS`, também pode recarregar o modelo).
 - A comparação da chave é feita em tempo constante (`secrets.compare_digest`), o que evita ataques de tempo.
@@ -209,6 +218,14 @@ Não têm corpo. Basta o header `X-API-Key` (exceto em `/health`).
 Os resultados saem **na mesma ordem** dos clientes enviados.
 
 **`200 OK` em `GET /v1/modelo` e `POST /v1/modelo/recarregar`**: o mesmo objeto `modelo` acima.
+Além de nome, versão, alias, algoritmo e run, ele traz `f1_macro_validacao` (F1 macro do modelo na
+validação out-of-time) e `versao_release` (tag `v1.0.<n>` da imagem publicada pelo CI/CD):
+
+```json
+{ "nome": "quantumfinance-credit-score", "versao": "2", "alias": "champion", "algoritmo": "gradient_boosting",
+  "run_id": "a496d7dee1ad45959570b93373fc02a4", "carregado_em": "2026-09-29T00:43:06+00:00",
+  "f1_macro_validacao": 0.7009, "versao_release": "v1.0.8" }
+```
 
 **`200 OK` em `GET /health`**
 
@@ -406,6 +423,9 @@ Os arquivos `Dockerfile` e `docker-compose.yml` estão prontos: `docker compose 
 ### Deploy na nuvem (Google Cloud Run)
 
 O passo a passo do deploy automático via GitHub Actions está em [`DEPLOY_GCP.md`](DEPLOY_GCP.md). Na nuvem, a URL base passa a ser a do serviço Cloud Run (`https://api-score-credito-<hash>-rj.a.run.app`), com HTTPS automático. Headers, payloads e respostas não mudam.
+Lá, o registry do MLflow fica num bucket do Cloud Storage: a API baixa o registry ao iniciar e carrega o
+`champion`. Novas versões, rejeições e rollbacks são feitos pelo GitHub Actions
+(roteiro em [`CICLO_NOVA_VERSAO.md`](CICLO_NOVA_VERSAO.md)).
 
 ### Recomendações para produção (fora do escopo local)
 

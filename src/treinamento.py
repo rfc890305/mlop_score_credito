@@ -91,7 +91,7 @@ from sklearn.preprocessing import FunctionTransformer
 from sklearn.tree import DecisionTreeClassifier
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from credit_score.config import RAIZ, caminho_absoluto, carregar_config, tracking_uri  # noqa: E402
+from credit_score.config import RAIZ, artifact_root, caminho_absoluto, carregar_config, tracking_uri  # noqa: E402
 from credit_score.processamento import (CLASSES, MESES, criar_preprocessador,  # noqa: E402
                                         filtrar_meses_recentes, limpar_dados)
 
@@ -244,6 +244,8 @@ def main() -> None:
     parser.add_argument("--config", default=None, help="caminho alternativo do config.yaml")
     parser.add_argument("--janela-meses", type=int, default=None,
                         help="sobrescreve dados.janela_meses_recentes")
+    parser.add_argument("--saida-decisao", default=None,
+                        help="grava a decisão de promoção em JSON (usado pelo CI no resumo da execução)")
     args = parser.parse_args()
 
     cfg = carregar_config(args.config)
@@ -256,7 +258,7 @@ def main() -> None:
     mlflow.set_registry_uri(tracking_uri(cfg))
     if mlflow.get_experiment_by_name(cfg_mlflow["experimento"]) is None:
         mlflow.create_experiment(cfg_mlflow["experimento"],
-                                 artifact_location=caminho_absoluto(cfg_mlflow["artifact_root"]).as_uri())
+                                 artifact_location=artifact_root(cfg))
     mlflow.set_experiment(cfg_mlflow["experimento"])
     client = MlflowClient()
 
@@ -384,6 +386,10 @@ def main() -> None:
             print(f"           - {m}")
         print(json.dumps({"run_id": run_pai.info.run_id, "versao": nova.version,
                           "promovido": aprovado}, ensure_ascii=False))
+        if args.saida_decisao:
+            Path(args.saida_decisao).write_text(
+                json.dumps({"run_id": run_pai.info.run_id, **decisao}, ensure_ascii=False, indent=2,
+                           default=str), encoding="utf-8")
 
 
 if __name__ == "__main__":

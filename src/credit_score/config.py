@@ -27,3 +27,12 @@ def tracking_uri(cfg: dict) -> str:
     if uri.startswith("sqlite:///") and not uri.startswith("sqlite:////"):
         uri = f"sqlite:///{caminho_absoluto(uri.removeprefix('sqlite:///'))}"
     return uri
+
+
+def artifact_root(cfg: dict) -> str:
+    """Local onde o MLflow grava os artefatos de novos experimentos.
+    QF_ARTIFACT_ROOT tem prioridade (ex.: gs://<bucket>/mlartifacts no CI de produção)."""
+    raiz = os.getenv("QF_ARTIFACT_ROOT")
+    if raiz:
+        return raiz
+    return caminho_absoluto(cfg["mlflow"]["artifact_root"]).as_uri()

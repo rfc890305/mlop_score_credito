@@ -1,8 +1,18 @@
-# CI/CD: testes em todo push e PR; em push na main, build da imagem, publicação
-# no Artifact Registry, deploy no Cloud Run e criação automática da tag de versão.
+# CI/CD com registry persistente do MLflow no Cloud Storage.
 #
-# Configuração (Settings > Secrets and variables > Actions > Variables):
+#   Todo push e PR ........ job "testes": treino local (registry temporário) + pytest
+#   Push na main .......... job "treino-e-deploy":
+#                            1. baixa o registry de produção (gs://<bucket>/mlflow.db)
+#                            2. treina e compara o candidato com o champion REAL em produção
+#                            3. promove (nova versão vira champion) ou rejeita
+#                            4. envia o registry de volta ao bucket (com cópia histórica)
+#                            5. build da imagem da API, deploy no Cloud Run, smoke test
+#                            6. tag git + GitHub Release com a decisão e as métricas
+#   Actions > Run workflow  retreino manual, ou promoção/rollback de uma versão existente
+#
+# Variáveis (Settings > Secrets and variables > Actions > Variables):
 #   GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT, GCP_RUNTIME_SA
+#   GCP_MLFLOW_BUCKET (opcional; padrão: <GCP_PROJECT_ID>-mlflow)
 # Nenhuma chave de conta de serviço é usada: a autenticação é por Workload Identity Federation.
 name: ci-cd
 
@@ -11,11 +21,21 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      promover_versao:
+        description: "Promoção manual / rollback: número da versão que vira champion (vazio = treinar novo candidato)"
+        required: false
+        default: ""
+      motivo:
+        description: "Motivo da promoção manual (fica registrado na versão)"
+        required: false
+        default: "promoção manual via GitHub Actions"
 
 env:
   VERSAO_BASE: "1.0"
   REPOSITORIO_AR: credit-score        # repositório do Artifact Registry
   SERVICO: api-score-credito          # nome do serviço no Cloud Run
+  MLFLOW_DISABLE_AGENT_HINT: "1"
 
 jobs:
   testes:
@@ -27,10 +47,8 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements-dev.txt
-      - name: Treinar e promover (gera o champion usado pelos testes)
+      - name: Treinar e promover (registry temporário, gera o champion usado pelos testes)
         run: python src/treinamento.py
-        env:
-          MLFLOW_DISABLE_AGENT_HINT: "1"
       - name: Testes automatizados
         run: python -m pytest -q tests
       - name: Guardar evidências do treino
@@ -43,16 +61,20 @@ jobs:
             mlartifacts/
           retention-days: 30
 
-  deploy:
+  treino-e-deploy:
     needs: testes
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    concurrency:
+      group: registry-producao     # um treino/promoção por vez sobre o mesmo registry
+      cancel-in-progress: false
     permissions:
-      contents: write     # criar a tag de versão
+      contents: write     # tag e release de versão
       id-token: write     # Workload Identity Federation
     env:
       VERSAO: v1.0.${{ github.run_number }}
       IMAGEM: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/credit-score/api-score-credito
+      BUCKET: ${{ vars.GCP_MLFLOW_BUCKET || format('{0}-mlflow', vars.GCP_PROJECT_ID) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,12 +86,63 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build e push da imagem (treina o modelo dentro do build)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Baixar o registry de produção
+        run: |
+          gcloud storage buckets describe "gs://$BUCKET" >/dev/null \
+            || { echo "::error::Bucket gs://$BUCKET não existe. Rode deploy/gcp/configurar_gcp.sh"; exit 1; }
+          if gcloud storage cp "gs://$BUCKET/mlflow.db" mlflow.db; then
+            echo "Registry existente:"; python src/promover_modelo.py --listar
+          else
+            echo "Primeira execução: registry novo (a primeira versão aprovada vira champion)"
+          fi
+
+      - name: Treinar e comparar com o champion em produção
+        if: inputs.promover_versao == ''
+        env:
+          QF_ARTIFACT_ROOT: gs://${{ env.BUCKET }}/mlartifacts
+        run: |
+          set -o pipefail   # se o treino falhar, o registry do bucket não é alterado
+          python src/treinamento.py --saida-decisao decisao.json | tee treino.log
+
+      - name: Promoção manual / rollback
+        if: inputs.promover_versao != ''
+        env:   # entradas via variáveis de ambiente (evita injeção de comandos)
+          VERSAO_ALVO: ${{ inputs.promover_versao }}
+          MOTIVO: ${{ inputs.motivo }}
+        run: |
+          set -o pipefail
+          python src/promover_modelo.py --versao "$VERSAO_ALVO" --motivo "$MOTIVO" | tee treino.log
+
+      - name: Enviar o registry de volta ao bucket
+        run: |
+          gcloud storage cp mlflow.db "gs://$BUCKET/mlflow.db"
+          gcloud storage cp mlflow.db "gs://$BUCKET/historico/mlflow-$VERSAO.db"
+
+      - name: Resumo da execução
+        run: |
+          {
+            echo "## $VERSAO: registry do modelo"
+            echo '```text'
+            grep -E '^\[(dados|candidato|registry|promoção)\]|^ +- |^Versão|champion' treino.log || cat treino.log
+            echo '```'
+            echo "### Versões registradas"
+            echo '```text'
+            python src/promover_modelo.py --listar
+            echo '```'
+          } | tee resumo.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build e push da imagem da API
         run: |
           gcloud artifacts repositories describe "$REPOSITORIO_AR" --location=${{ vars.GCP_REGION }} >/dev/null \
             || { echo "::error::Repositório '$REPOSITORIO_AR' não existe no Artifact Registry em ${{ vars.GCP_REGION }}. Rode deploy/gcp/configurar_gcp.sh"; exit 1; }
           gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
-          docker build -f deploy/gcp/Dockerfile \
+          docker build -f deploy/gcp/Dockerfile --build-arg VERSAO_RELEASE="$VERSAO" \
             -t "$IMAGEM:$VERSAO" -t "$IMAGEM:${{ github.sha }}" .
           docker push --all-tags "$IMAGEM"
 
@@ -79,6 +152,8 @@ jobs:
           service: ${{ env.SERVICO }}
           region: ${{ vars.GCP_REGION }}
           image: ${{ env.IMAGEM }}:${{ env.VERSAO }}
+          env_vars: |
+            QF_REGISTRY_URI=gs://${{ env.BUCKET }}
           # a autenticação é feita pela própria API (X-API-Key); o Cloud Run fica público
           flags: >-
             --allow-unauthenticated
@@ -87,14 +162,19 @@ jobs:
             --service-account=${{ vars.GCP_RUNTIME_SA }}
             --set-secrets=QF_API_KEYS=qf-api-keys:latest,QF_ADMIN_KEYS=qf-admin-keys:latest
 
-      - name: Smoke test
+      - name: Smoke test (a API carregou o champion do registry?)
         run: |
           curl -fsS "${{ steps.deploy.outputs.url }}/health" | tee health.json
           grep -q '"modelo_carregado":true' health.json
+          echo "" >> resumo.md
+          echo "**Cloud Run:** ${{ steps.deploy.outputs.url }} | health: \`$(cat health.json)\`" >> resumo.md
 
-      - name: Criar tag de versão
+      - name: Criar tag e release de versão
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "$VERSAO" -m "Deploy $VERSAO no Cloud Run (${{ github.sha }})"
           git push origin "$VERSAO"
+          gh release create "$VERSAO" --title "$VERSAO" --notes-file resumo.md
