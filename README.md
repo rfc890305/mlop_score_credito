@@ -17,7 +17,7 @@ segura com autenticação e throttling, tudo documentado.
 | + | Aplicação cliente no Colab: pedido de empréstimo → API → SIM/NÃO | [`notebooks/03_aplicacao_emprestimo_colab.ipynb`](notebooks/03_aplicacao_emprestimo_colab.ipynb) ([abrir no Colab](https://colab.research.google.com/github/rfc890305/mlop_score_credito/blob/main/notebooks/03_aplicacao_emprestimo_colab.ipynb)) |
 | + | Avaliação da API publicada com dados rotulados, no Colab | [`notebooks/02_avaliacao_api_colab.ipynb`](notebooks/02_avaliacao_api_colab.ipynb) ([abrir no Colab](https://colab.research.google.com/github/rfc890305/mlop_score_credito/blob/main/notebooks/02_avaliacao_api_colab.ipynb)) |
 | + | Ciclo de nova versão (melhora, rejeição e rollback) com evidências | [`docs/CICLO_NOVA_VERSAO.md`](docs/CICLO_NOVA_VERSAO.md) |
-| + | **Evidências de Versão**: ciclo real em produção (v1 → v2 aprovada → v3 rejeitada → rollback), com releases e prints da aplicação | [`docs/EVIDENCIAS_CICLO.md`](docs/EVIDENCIAS_CICLO.md) |
+| + | **Evidências de Versão**: ciclo real em produção (v1 → v2 aprovada → v3 rejeitada → rollback → v2), com releases e prints da aplicação | [`docs/EVIDENCIAS_CICLO.md`](docs/EVIDENCIAS_CICLO.md) |
 | + | Evidências reais de execução (logs e telas) | [`docs/evidencias/`](docs/evidencias) e [`docs/imagens/`](docs/imagens) |
 
 ## Como testar a API publicada

@@ -14,7 +14,7 @@ contra a API `https://api-score-credito-czkhbhag2q-rj.a.run.app`.
 | 3. Critério barrando candidato | Run workflow (retreino sem mudança) | [ci-cd #14](https://github.com/rfc890305/mlop_score_credito/actions/runs/36508942927) | [v1.0.14](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.14) | v3 **rejeitada**: F1 0,7009 não supera 0,7009 + 0,005 | v2 |
 | 4a. Rollback com entrada inválida | Run workflow com `promover_versao` preenchido como texto | [ci-cd #15](https://github.com/rfc890305/mlop_score_credito/actions/runs/36509544978) | nenhuma | falhou **antes** de gravar o registry: nada mudou | v2 |
 | 4b. Rollback | Run workflow com `promover_versao = 1` | [ci-cd #16](https://github.com/rfc890305/mlop_score_credito/actions/runs/36510330403) | [v1.0.16](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.16) | `champion` volta para a v1; v2 fica `arquivado` | v1 |
-<!-- ROLLBACK -->
+| 5. Retorno à melhor versão | Run workflow com `promover_versao = 2` | [ci-cd #17](https://github.com/rfc890305/mlop_score_credito/actions/runs/36510868074) | [v1.0.17](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.17) | `champion` volta para a v2 | v2 |
 
 **Efeito na aplicação cliente (mesmos pedidos, versões diferentes):**
 
@@ -152,7 +152,26 @@ v3   aliases=['challenger'] status=rejeitado algoritmo=gradient_boosting f1=0.70
 ```
 
 Smoke test do deploy: `{"status":"ok","modelo_carregado":true,"versao_modelo":"1"}`.
-<!-- SECAO_ROLLBACK -->
+
+A aplicação cliente passou a usar a v1, sem nenhuma mudança no notebook:
+
+![Notebook após o rollback: modelo v1, release v1.0.16](imagens/ciclo/08_rollback_v1_configuracao.png)
+
+## 5. Retorno à melhor versão
+
+Run workflow com `promover_versao = 2` ([release v1.0.17](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.17)):
+
+```text
+'champion' agora aponta para v2 (antes: v1)
+
+v1   aliases=[] status=arquivado algoritmo=gradient_boosting f1=0.6847
+v2   aliases=['champion'] status=producao algoritmo=gradient_boosting f1=0.7009
+v3   aliases=['challenger'] status=rejeitado algoritmo=gradient_boosting f1=0.7009
+```
+
+![Notebook após o retorno: modelo v2, release v1.0.17](imagens/ciclo/09_retorno_v2_configuracao.png)
+
+Estado final: v2 em produção, v1 arquivada, v3 rejeitada, todas rastreáveis no registry e nos releases.
 
 ## Onde conferir
 
