@@ -19,11 +19,15 @@ name: ci-cd
 on:
   push:
     branches: [main]
+    paths-ignore:            # mudanças só de documentação não retreinam nem publicam
+      - "docs/**"
+      - "**.md"
+      - "notebooks/**"
   pull_request:
   workflow_dispatch:
     inputs:
       promover_versao:
-        description: "Promoção manual / rollback: número da versão que vira champion (vazio = treinar novo candidato)"
+        description: "Promoção manual / rollback: só o número da versão que vira champion, ex.: 1 (vazio = treinar novo candidato)"
         required: false
         default: ""
       motivo:
@@ -117,7 +121,11 @@ jobs:
           MOTIVO: ${{ inputs.motivo }}
         run: |
           set -o pipefail
-          python src/promover_modelo.py --versao "$VERSAO_ALVO" --motivo "$MOTIVO" | tee treino.log
+          # aceita "1", "v1" ou "promover_versao = 1"; qualquer outra coisa falha sem tocar no registry
+          NUMERO=$(printf '%s' "$VERSAO_ALVO" | grep -oE '[0-9]+' | tail -n 1 || true)
+          [ -n "$NUMERO" ] || { echo "::error::promover_versao deve ser o número da versão (ex.: 1), recebido: '$VERSAO_ALVO'"; exit 1; }
+          MOTIVO=$(printf '%s' "$MOTIVO" | sed -E 's/^[[:space:]]*motivo[[:space:]]*=[[:space:]]*//')
+          python src/promover_modelo.py --versao "$NUMERO" --motivo "$MOTIVO" | tee treino.log
 
       - name: Enviar o registry de volta ao bucket
         run: |
