@@ -40,7 +40,8 @@ quantumfinance-credit-score/
 │                                     # (predicoes_v<versão>_<data>.csv)
 │
 ├── notebooks/
-│   └── 01_analise_exploratoria.ipynb # EDA; apenas exploração, nenhuma regra de produção
+│   ├── 01_analise_exploratoria.ipynb # EDA; apenas exploração, nenhuma regra de produção
+│   └── 02_avaliacao_api_colab.ipynb  # Colab: chama a API no Cloud Run e mede a qualidade com dados rotulados
 │
 ├── src/                              # código de produção
 │   ├── credit_score/                 # pacote compartilhado (treino, inferência e API)

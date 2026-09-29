@@ -84,6 +84,15 @@ No final, ele imprime 5 valores. Deixe essa tela aberta para o próximo passo.
 Essa é toda a "conexão": o GitHub apresenta um token temporário assinado para este repositório, e o Google
 troca esse token por um acesso da conta `github-deploy`. Nenhuma senha ou chave fica guardada no GitHub.
 
+> **Esses valores podem aparecer na documentação?** Sim. São identificadores, não credenciais: o ID do projeto,
+> a região, o e-mail das contas de serviço e o caminho do provider não dão acesso a nada sozinhos. Para usar a
+> conta `github-deploy`, é preciso um token OIDC que o GitHub só emite para workflows deste repositório (o provider
+> exige `assertion.repository == 'rfc890305/mlop_score_credito'`), e só quem tem permissão de escrita no repositório
+> altera os workflows. Por isso eles ficam em *Variables*, não em *Secrets*. O que é segredo de fato (as chaves
+> da API) fica no Secret Manager e nunca aparece no repositório, nos logs nem na imagem. Os cuidados que importam são:
+> não dar permissão de escrita no repositório a quem não deve fazer deploy, proteger a branch `main` e nunca
+> criar chave JSON para as contas de serviço.
+
 ### Passo 5: fazer o merge e acompanhar o primeiro deploy
 1. Faça o merge do PR na `main`.
 2. Em **Actions → ci-cd**, acompanhe os jobs `testes`, com cerca de 1 min, e depois `deploy`, com 5 a 8 min, já que o build treina o modelo.

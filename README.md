@@ -14,6 +14,7 @@ segura com autenticação e throttling, tudo documentado.
 | 3 | Script de inferência com a última versão promovida | [`src/inferencia.py`](src/inferencia.py) |
 | 4 | Documentação da API (endpoint, chamada, respostas, FAQ, deploy) | [`docs/API.md`](docs/API.md) |
 | + | Deploy no Google Cloud com CI/CD e versionamento automático | [`docs/DEPLOY_GCP.md`](docs/DEPLOY_GCP.md), [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml), [`deploy/gcp/`](deploy/gcp) |
+| + | Avaliação da API publicada, no Google Colab | [`notebooks/02_avaliacao_api_colab.ipynb`](notebooks/02_avaliacao_api_colab.ipynb) ([abrir no Colab](https://colab.research.google.com/github/rfc890305/mlop_score_credito/blob/main/notebooks/02_avaliacao_api_colab.ipynb)) |
 | + | Evidências reais de execução (logs e telas) | [`docs/evidencias/`](docs/evidencias) e [`docs/imagens/`](docs/imagens) |
 
 ## Resumo da solução
