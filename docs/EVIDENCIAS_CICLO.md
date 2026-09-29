@@ -13,6 +13,7 @@ contra a API `https://api-score-credito-czkhbhag2q-rj.a.run.app`.
 | 2. Melhora | Merge do PR #5 (gradient boosting ajustado) | [ci-cd #13](https://github.com/rfc890305/mlop_score_credito/actions/runs/36507979748) | [v1.0.13](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.13) | v2 **aprovada**: F1 0,7009 > 0,6847 + 0,005 | v2 |
 | 3. Critério barrando candidato | Run workflow (retreino sem mudança) | [ci-cd #14](https://github.com/rfc890305/mlop_score_credito/actions/runs/36508942927) | [v1.0.14](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.14) | v3 **rejeitada**: F1 0,7009 não supera 0,7009 + 0,005 | v2 |
 | 4a. Rollback com entrada inválida | Run workflow com `promover_versao` preenchido como texto | [ci-cd #15](https://github.com/rfc890305/mlop_score_credito/actions/runs/36509544978) | nenhuma | falhou **antes** de gravar o registry: nada mudou | v2 |
+| 4b. Rollback | Run workflow com `promover_versao = 1` | [ci-cd #16](https://github.com/rfc890305/mlop_score_credito/actions/runs/36510330403) | [v1.0.16](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.16) | `champion` volta para a v1; v2 fica `arquivado` | v1 |
 <!-- ROLLBACK -->
 
 **Efeito na aplicação cliente (mesmos pedidos, versões diferentes):**
@@ -135,6 +136,22 @@ enviado ao bucket. Nenhum deploy foi feito e a API continuou na v2
 ([ci-cd #15](https://github.com/rfc890305/mlop_score_credito/actions/runs/36509544978)). Depois disso, o workflow
 passou a extrair o número de entradas como `v1` ou `promover_versao = 1` e a recusar entradas sem número com
 uma mensagem clara.
+
+### 4b. Rollback para a v1
+
+Run workflow com `promover_versao = 1` e `motivo = demonstração de rollback`. O pipeline moveu o alias
+`champion`, gravou o registry no bucket e publicou uma nova revisão no Cloud Run, sem retreinar
+([release v1.0.16](https://github.com/rfc890305/mlop_score_credito/releases/tag/v1.0.16)):
+
+```text
+'champion' agora aponta para v1 (antes: v2)
+
+v1   aliases=['champion'] status=producao algoritmo=gradient_boosting f1=0.6847
+v2   aliases=[] status=arquivado algoritmo=gradient_boosting f1=0.7009
+v3   aliases=['challenger'] status=rejeitado algoritmo=gradient_boosting f1=0.7009
+```
+
+Smoke test do deploy: `{"status":"ok","modelo_carregado":true,"versao_modelo":"1"}`.
 <!-- SECAO_ROLLBACK -->
 
 ## Onde conferir
