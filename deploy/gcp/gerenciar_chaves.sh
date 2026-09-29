@@ -7,14 +7,23 @@
 #   bash deploy/gcp/gerenciar_chaves.sh criar
 #   bash deploy/gcp/gerenciar_chaves.sh revogar <primeiros caracteres da chave>
 #
-# Depois de criar ou revogar, o script atualiza o Cloud Run para ler a nova versão
-# do segredo (o Cloud Run só lê segredos ao criar uma revisão).
+# Autocadastro (POST /v1/chaves): quem tem o código de convite gera a própria chave.
+#   bash deploy/gcp/gerenciar_chaves.sh convite                  # mostra o código atual
+#   bash deploy/gcp/gerenciar_chaves.sh novo-convite             # troca o código (o antigo para de valer)
+#   bash deploy/gcp/gerenciar_chaves.sh listar-emitidas          # chaves geradas pelo autocadastro
+#   bash deploy/gcp/gerenciar_chaves.sh revogar-emitida <prefixo>
+#
+# Depois de criar/revogar chaves fixas ou trocar o convite, o script atualiza o Cloud Run
+# para ler a nova versão do segredo (o Cloud Run só lê segredos ao criar uma revisão).
+# Revogar uma chave emitida não exige nova revisão: vale em até 1 minuto.
 set -euo pipefail
 
 PROJECT_ID="consultorfinanceiroai"
 REGION="southamerica-east1"
 SERVICO="api-score-credito"
 SEGREDO="qf-api-keys"
+SEGREDO_CONVITE="qf-codigo-convite"
+BUCKET_CHAVES="gs://$PROJECT_ID-api-chaves"
 
 chaves_atuais() {  # uma chave por linha (o segredo é gravado sem quebra de linha no final)
   { gcloud secrets versions access latest --secret="$SEGREDO" --project="$PROJECT_ID"; echo; } \
@@ -54,6 +63,43 @@ case "${1:-}" in
     echo "$RESTANTES" | gravar
     echo "Chave(s) iniciada(s) por '$PREFIXO' revogada(s)."
     ;;
+  convite)
+    echo "Código de convite atual (envie junto com a URL da API):"
+    gcloud secrets versions access latest --secret="$SEGREDO_CONVITE" --project="$PROJECT_ID"; echo
+    ;;
+  novo-convite)
+    python3 -c 'import secrets;print(secrets.token_urlsafe(9), end="")' \
+      | gcloud secrets versions add "$SEGREDO_CONVITE" --data-file=- --project="$PROJECT_ID" >/dev/null
+    echo "Atualizando o Cloud Run para usar o novo código..."
+    gcloud run services update "$SERVICO" --region="$REGION" --project="$PROJECT_ID" \
+      --update-secrets=QF_CODIGO_CONVITE="$SEGREDO_CONVITE":latest --quiet >/dev/null
+    echo "Novo código (chaves já emitidas continuam valendo):"
+    gcloud secrets versions access latest --secret="$SEGREDO_CONVITE" --project="$PROJECT_ID"; echo
+    ;;
+  listar-emitidas)
+    OBJETOS=$(gcloud storage ls "$BUCKET_CHAVES/chaves/" 2>/dev/null || true)
+    [ -z "$OBJETOS" ] && { echo "Nenhuma chave emitida pelo autocadastro."; exit 0; }
+    echo "Chaves emitidas pelo autocadastro:"
+    for O in $OBJETOS; do gcloud storage cat "$O"; echo; done | python3 -c '
+import json, sys
+from datetime import datetime, timezone
+agora = datetime.now(timezone.utc)
+for linha in filter(None, map(str.strip, sys.stdin)):
+    r = json.loads(linha)
+    status = "ativa" if datetime.fromisoformat(r["expira_em"]) > agora else "expirada"
+    print("  {prefixo}...  {nome} <{email}>  criada {c}  expira {e} ({s})".format(
+        c=r["criada_em"][:10], e=r["expira_em"][:10], s=status, **r))'
+    ;;
+  revogar-emitida)
+    PREFIXO="${2:?informe o prefixo mostrado em listar-emitidas}"
+    ALVOS=""
+    for O in $(gcloud storage ls "$BUCKET_CHAVES/chaves/" 2>/dev/null || true); do
+      gcloud storage cat "$O" | grep -q "\"prefixo\": \"$PREFIXO" && ALVOS="$ALVOS $O"
+    done
+    [ -z "$ALVOS" ] && { echo "Nenhuma chave emitida começa com '$PREFIXO'."; exit 1; }
+    gcloud storage rm $ALVOS --quiet
+    echo "Chave(s) emitida(s) iniciada(s) por '$PREFIXO' revogada(s); vale em até 1 minuto."
+    ;;
   *)
-    sed -n '2,10p' "$0"; exit 1 ;;
+    sed -n '2,19p' "$0"; exit 1 ;;
 esac

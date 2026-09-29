@@ -3,7 +3,8 @@ API REST de Score de Crédito - QuantumFinance
 =============================================
 
 Segurança:
-  - Autenticação: header X-API-Key (chaves em QF_API_KEYS / QF_ADMIN_KEYS)
+  - Autenticação: header X-API-Key (chaves em QF_API_KEYS / QF_ADMIN_KEYS ou emitidas
+    por POST /v1/chaves mediante código de convite, guardadas só como hash)
   - Throttling: limite de requisições por chave (padrão 30/minuto; QF_RATE_LIMIT)
   - Validação estrita do payload (Pydantic): campos desconhecidos são rejeitados
   - Erros padronizados, sem vazamento de stack trace
@@ -41,9 +42,11 @@ from credit_score.config import carregar_config, tracking_uri  # noqa: E402
 from credit_score.registro_remoto import baixar_registry, origem_registry  # noqa: E402
 from inferencia import carregar_modelo_producao, prever  # noqa: E402
 
-from .esquemas import (DadosCliente, InfoModelo, RequisicaoLote, RespostaErro,  # noqa: E402
-                       RespostaLote, RespostaSaude, RespostaScore, ResultadoScore)
-from .seguranca import exigir_chave_admin, exigir_chave_api, limiter  # noqa: E402
+from . import chaves_emitidas  # noqa: E402
+from .esquemas import (CadastroChave, ChaveEmitida, DadosCliente, InfoModelo,  # noqa: E402
+                       RequisicaoLote, RespostaErro, RespostaLote, RespostaSaude, RespostaScore,
+                       ResultadoScore)
+from .seguranca import exigir_chave_admin, exigir_chave_api, ip_origem, limiter  # noqa: E402
 
 logging.basicConfig(level=os.getenv("QF_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -51,6 +54,7 @@ log = logging.getLogger("qf.api")
 
 CFG = carregar_config()
 LIMITE = os.getenv("QF_RATE_LIMIT", CFG["api"]["limite_requisicoes"])
+LIMITE_CADASTRO = os.getenv("QF_LIMITE_CADASTRO", "5/hour")
 LIMITE_LOTE = int(os.getenv("QF_LIMITE_LOTE", CFG["api"]["limite_lote"]))
 
 
@@ -108,10 +112,12 @@ DESCRICAO = """
 API para consulta do **score de crédito** (Poor / Standard / Good) de clientes de empresas
 parceiras da QuantumFinance.
 
-* **Autenticação**: envie a chave recebida no header `X-API-Key`.
+* **Autenticação**: envie a chave no header `X-API-Key`. Quem recebeu o **código de convite**
+  gera a própria chave em `POST /v1/chaves` (limite {limite_cadastro} por IP; validade de {dias} dias).
 * **Throttling**: {limite} por chave. Ao exceder, a API responde `429` com `Retry-After`.
 * **Modelo**: sempre a última versão promovida para produção no MLflow (alias `champion`).
-""".format(limite=LIMITE)
+""".format(limite=LIMITE, limite_cadastro=LIMITE_CADASTRO,
+           dias=os.getenv("QF_VALIDADE_CHAVE_DIAS", "30"))
 
 app = FastAPI(
     title=CFG["api"]["titulo"],
@@ -255,3 +261,25 @@ def recarregar(request: Request, response: Response, _: str = Depends(exigir_cha
         log.error("falha ao recarregar: %s", exc)
         raise HTTPException(503, detail={"codigo": "modelo_indisponivel",
                                          "mensagem": "Não foi possível carregar o modelo de produção."})
+
+
+@app.post("/v1/chaves", response_model=ChaveEmitida, status_code=201, tags=["Acesso"],
+          summary="Gera uma chave de API pessoal (exige o código de convite do projeto)",
+          responses={403: {"model": RespostaErro}, 503: {"model": RespostaErro}})
+@limiter.limit(lambda: LIMITE_CADASTRO, key_func=lambda request: "cadastro:" + ip_origem(request))
+def cadastrar_chave(request: Request, response: Response, corpo: CadastroChave):
+    if not chaves_emitidas.cadastro_habilitado():
+        raise HTTPException(503, detail={"codigo": "cadastro_indisponivel",
+                                         "mensagem": "O autocadastro de chaves não está habilitado neste ambiente."})
+    if not chaves_emitidas.convite_valido(corpo.codigo_convite):
+        log.warning("cadastro recusado: convite inválido ip=%s", ip_origem(request))
+        raise HTTPException(403, detail={"codigo": "convite_invalido",
+                                         "mensagem": "Código de convite inválido. Peça o código ao responsável do projeto."})
+    try:
+        emitida = chaves_emitidas.emitir(corpo.nome.strip(), corpo.email.strip().lower())
+    except Exception as exc:
+        log.error("falha ao emitir chave: %s", exc)
+        raise HTTPException(503, detail={"codigo": "cadastro_indisponivel",
+                                         "mensagem": "Não foi possível emitir a chave agora. Tente novamente."})
+    log.info("chave emitida prefixo=%s email=%s", emitida["prefixo"], emitida["email"])
+    return ChaveEmitida(**emitida)

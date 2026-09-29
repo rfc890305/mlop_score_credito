@@ -3,6 +3,8 @@
 As chaves NUNCA ficam no código: são lidas das variáveis de ambiente
   QF_API_KEYS    -> chaves dos parceiros, separadas por vírgula
   QF_ADMIN_KEYS  -> chaves administrativas (recarregar modelo)
+Além delas, valem as chaves geradas pelo autocadastro (POST /v1/chaves), guardadas
+só como hash em QF_CHAVES_URI (ver api/chaves_emitidas.py).
 """
 from __future__ import annotations
 
@@ -14,6 +16,8 @@ from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+from . import chaves_emitidas
 
 NOME_HEADER = "X-API-Key"
 esquema_chave = APIKeyHeader(name=NOME_HEADER, auto_error=False,
@@ -34,7 +38,8 @@ def exigir_chave_api(chave: str | None = Security(esquema_chave)) -> str:
         raise HTTPException(401, detail={"codigo": "chave_ausente",
                                          "mensagem": f"Header {NOME_HEADER} não informado."},
                             headers={"WWW-Authenticate": "ApiKey"})
-    if not _chave_valida(chave, _chaves("QF_API_KEYS") + _chaves("QF_ADMIN_KEYS")):
+    if not (_chave_valida(chave, _chaves("QF_API_KEYS") + _chaves("QF_ADMIN_KEYS"))
+            or chaves_emitidas.chave_emitida_valida(chave)):
         raise HTTPException(401, detail={"codigo": "chave_invalida",
                                          "mensagem": "Chave de API inválida ou revogada."},
                             headers={"WWW-Authenticate": "ApiKey"})
@@ -55,7 +60,16 @@ def identificar_cliente(request: Request) -> str:
     if chave:
         # usa o hash da chave para não manter o segredo em memória do limitador
         return "chave:" + hashlib.sha256(chave.encode()).hexdigest()[:16]
-    return "ip:" + get_remote_address(request)
+    return "ip:" + ip_origem(request)
+
+
+def ip_origem(request: Request) -> str:
+    """IP de quem chamou. No Cloud Run o balanceador acrescenta o IP real ao FINAL do
+    X-Forwarded-For; usar o último item impede que o cliente forje um IP no header."""
+    encaminhado = request.headers.get("X-Forwarded-For", "")
+    if encaminhado.strip():
+        return encaminhado.split(",")[-1].strip()
+    return get_remote_address(request)
 
 
 limiter = Limiter(key_func=identificar_cliente, headers_enabled=True,

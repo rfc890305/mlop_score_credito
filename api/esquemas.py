@@ -102,3 +102,25 @@ class RespostaSaude(BaseModel):
     status: Literal["ok", "degradado"]
     modelo_carregado: bool
     versao_modelo: str | None
+
+
+class CadastroChave(BaseModel):
+    """Pedido de chave pelo autocadastro (exige o código de convite do projeto)."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {
+        "nome": "Prof. Avaliador", "email": "avaliador@exemplo.com", "codigo_convite": "<código recebido>"}})
+
+    nome: str = Field(..., min_length=2, max_length=80, description="Nome de quem vai usar a chave")
+    email: str = Field(..., max_length=120, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                       description="E-mail de contato (identifica a chave para revogação)")
+    codigo_convite: str = Field(..., min_length=1, max_length=200,
+                                description="Código de convite fornecido pelo responsável do projeto")
+
+
+class ChaveEmitida(BaseModel):
+    chave: str = Field(..., description="Chave de API. Guarde agora: ela não é exibida de novo")
+    prefixo: str = Field(..., description="Início da chave, usado para identificá-la e revogá-la")
+    nome: str
+    email: str
+    criada_em: str
+    expira_em: str
+    uso: str = Field("Envie no header X-API-Key em /v1/score, /v1/score/lote e /v1/modelo")
